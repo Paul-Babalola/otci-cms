@@ -1,0 +1,97 @@
+import { useEffect, useRef, useState } from 'react';
+import { S, UI, commit, persist, save, log, toast, go, totals } from '../store.js';
+import { Icon, Pill, Count } from '../components/ui.jsx';
+import { pick, readImg } from '../lib/util.js';
+
+export function newFolder() {
+  const f = { id: 'f' + Date.now(), title: '', desc: '', visible: false, images: [] };
+  S.gallery.push(f); log('created', 'New folder', ''); persist();
+  UI.folder = f.id; UI.focusTitle = true; commit();
+}
+
+export function Media() {
+  const t = totals();
+  return (
+    <>
+      <div className="h-row"><div><h1 className="h1">Media library</h1><p className="lede">Folders shown in the public gallery. The last uploaded image becomes a folder’s cover.</p></div><button className="btn btn-p" data-a="newfolder" onClick={newFolder}><Icon n="plus" />New folder</button></div>
+      <div className="mstats">
+        <div className="card"><b className="num"><Count to={t.folders} /></b><span className="sub">Folders</span></div>
+        <div className="card"><b className="num"><Count to={t.imgs} /></b><span className="sub">Images</span></div>
+        <div className="card"><b className="num"><Count to={t.visFolders} /></b><span className="sub">Visible folders</span></div>
+      </div>
+      <div className="fgrid">
+        {S.gallery.map((f) => {
+          const im = [...f.images].reverse().slice(0, 3);
+          return (
+            <button key={f.id} className="fcard" onClick={() => { UI.anim = true; go('media', { folder: f.id }); }}>
+              {im.length ? <div className="mos">{[0, 1, 2].map((k) => <div key={k} style={im[k]?.src ? { backgroundImage: `url('${im[k].src}')` } : undefined} />)}</div> : <div className="mos none"><Icon n="image" /></div>}
+              <div className="fb"><div><b>{f.title || 'Untitled folder'}</b><small className="num">{f.images.length} {f.images.length === 1 ? 'image' : 'images'}</small></div><Pill k={f.visible ? 'visible' : 'hidden'} /></div>
+            </button>
+          );
+        })}
+        <button className="fnew" onClick={newFolder}><Icon n="plus" />New folder</button>
+      </div>
+    </>
+  );
+}
+
+export function Folder() {
+  const f = S.gallery.find((x) => x.id === UI.folder);
+  const [over, setOver] = useState(false);
+  const [fresh, setFresh] = useState(null);
+  const titleRef = useRef(null);
+  useEffect(() => { if (UI.focusTitle) { UI.focusTitle = false; setTimeout(() => titleRef.current?.focus(), 50); } }, []);
+  if (!f) { UI.folder = null; return <Media />; }
+
+  // TODO(api): upload to the media store. No gallery upload endpoint exists yet.
+  const add = (file) => readImg(file, (src, name) => {
+    f.images.push({ name, src }); setFresh(f.images.length - 1);
+    log('uploaded to', f.title || 'Untitled folder', ''); save();
+    toast('Uploaded and set as cover', { icon: 'upload' });
+  }, () => toast('That file isn’t an image we can read', { icon: 'x' }));
+
+  const toggle = () => { f.visible = !f.visible; log(f.visible ? 'showed' : 'hid', f.title || 'Untitled folder', ''); save(); toast(f.visible ? 'Folder is visible in the gallery' : 'Folder hidden from the gallery', { icon: f.visible ? 'eye' : 'eyeoff' }); };
+  const del = () => {
+    const k = S.gallery.indexOf(f); S.gallery.splice(k, 1); UI.folder = null; save();
+    toast(`Deleted ${f.title || 'folder'}`, { icon: 'trash', undo: () => { S.gallery.splice(k, 0, f); save(); } });
+  };
+  const cover = (j) => { const [im] = f.images.splice(j, 1); f.images.push(im); save(); toast('Cover updated', { icon: 'star' }); };
+  const rm = (j) => { const [im] = f.images.splice(j, 1); save(); toast('Image removed', { icon: 'trash', undo: () => { f.images.splice(j, 0, im); save(); } }); };
+  const edit = (k, v) => { f[k] = v; save(); };
+  const n = f.images.length;
+
+  return (
+    <>
+      <div className="h-row">
+        <div><h1 className="h1">{f.title || 'Untitled folder'}</h1><p className="lede num">{n} {n === 1 ? 'image' : 'images'} · {f.visible ? 'Shown in the public gallery' : 'Hidden from the public gallery'}</p></div>
+        <div className="ed-acts">
+          <button className="btn btn-d" onClick={del}><Icon n="trash" />Delete folder</button>
+          <button className="btn btn-s" role="switch" aria-checked={f.visible} onClick={toggle}><span className="sw" />{f.visible ? 'Visible' : 'Hidden'}</button>
+        </div>
+      </div>
+      <div className="card" style={{ padding: '4px 18px 18px', marginBottom: 12 }}><div className="row2">
+        <div className="fld"><label className="lbl" htmlFor="ftitle">Folder title</label><input ref={titleRef} className="inp" id="ftitle" value={f.title} placeholder="For example, Ideas Day 2026" onChange={(e) => edit('title', e.target.value)} /></div>
+        <div className="fld"><label className="lbl" htmlFor="fdesc">Description</label><input className="inp" id="fdesc" value={f.desc} placeholder="Shown under the folder title" onChange={(e) => edit('desc', e.target.value)} /></div>
+      </div></div>
+      <button className={`drop ${over ? 'over' : ''}`} onClick={() => pick('image/*', true, add)}
+        onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)}
+        onDrop={(e) => { e.preventDefault(); setOver(false); [...e.dataTransfer.files].filter((x) => x.type.startsWith('image')).forEach(add); }}>
+        <Icon n="upload" /><span><b>Drop images here</b> or browse. The newest image becomes the cover.</span>
+      </button>
+      {n ? (
+        <div className="igrid">
+          {f.images.map((im, j) => (
+            <div key={j + im.name} className={`it ${fresh === j ? 'new' : ''}`}>
+              <div className="th" style={im.src ? { backgroundImage: `url('${im.src}')` } : undefined} />
+              {j === n - 1 && <span className="cv"><Pill k="live" label="Cover" /></span>}
+              <div className="bar2"><span title={im.name}>{im.name}</span>
+                {j !== n - 1 && <button className="ib" aria-label="Make cover" title="Make cover" onClick={() => cover(j)}><Icon n="star" /></button>}
+                <button className="ib danger" aria-label={`Remove ${im.name}`} onClick={() => rm(j)}><Icon n="trash" /></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : <div className="empty"><b>This folder is empty</b>Upload images to give it a cover and show it in the gallery.</div>}
+    </>
+  );
+}
