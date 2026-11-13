@@ -21,101 +21,131 @@ const sect = (api, type) => api[type] || null;
 
 // ---------------------------------------------------------------- shared adapter factories
 
-/** Dept hero: Studio big-words/eyebrow stay local; intro + background sync. */
+/** Dept hero: headline, subtext, background image and CTA buttons all sync. */
 const heroDept = () => ({
   pull(v, api) {
     const c = sect(api, 'hero') && api.hero.content; if (!c) return;
+    if (c.headline) v.headline = c.headline;
     if (c.subtext) v.subtext = c.subtext;
     if (c.background_image) v.bg = mediaUrl(c.background_image);
+    if (Array.isArray(c.cta_buttons) && c.cta_buttons.length) {
+      v.buttons = c.cta_buttons.map((b) => ({ label: b.label || '', link: b.link || '', type: b.type === 'secondary' ? 'Secondary' : 'Primary' }));
+    }
   },
   push(v, api) {
     const s = sect(api, 'hero'); if (!s) return [];
-    return [{ id: s.id, content: { ...s.content, subtext: v.subtext, ...(isUrl(v.bg) ? { background_image: v.bg } : {}) } }];
+    const cta_buttons = (v.buttons || []).filter((b) => b.label).map((b) => ({ label: b.label, link: b.link || '', type: (b.type || 'Primary').toLowerCase() }));
+    return [{ id: s.id, content: { ...s.content, headline: v.headline, subtext: v.subtext, ...(isUrl(v.bg) ? { background_image: v.bg } : {}), ...(cta_buttons.length ? { cta_buttons } : {}) } }];
   },
 });
 
-/** 'In numbers' ↔ metrics_bar. Dept pages use `title` for the label; write both. */
+/** 'In numbers' ↔ metrics_bar. Stats sync; section-level title stored as passthrough. */
 const metrics = () => ({
   pull(v, api) {
     const c = sect(api, 'metrics_bar') && api.metrics_bar.content;
-    if (Array.isArray(c && c.stats) && c.stats.length) v.stats = c.stats.map((s) => ({ value: s.value || '', label: s.title || s.label || '' }));
+    if (!c) return;
+    if (c.title) v.title = c.title;
+    if (Array.isArray(c.stats) && c.stats.length) v.stats = c.stats.map((s) => ({ value: s.value || '', label: s.title || s.label || '' }));
   },
   push(v, api) {
     const s = sect(api, 'metrics_bar'); if (!s) return [];
     const prev = Array.isArray(s.content && s.content.stats) ? s.content.stats : [];
     const stats = (v.stats || []).map((k, i) => ({ ...(prev[i] || {}), value: k.value, title: k.label, label: k.label }));
-    return [{ id: s.id, content: { ...s.content, stats } }];
+    return [{ id: s.id, content: { ...s.content, ...(v.title !== undefined ? { title: v.title } : {}), stats } }];
   },
 });
 
-/** 'At a glance' ↔ program_overview (statement=title, body=description, img=right_image). */
+/** 'At a glance' ↔ program_overview (statement=title, body=description, img=right_image, cta_button_label=buttons[0].label). */
 const overview = () => ({
   pull(v, api) {
     const c = sect(api, 'program_overview') && api.program_overview.content; if (!c) return;
     if (c.title) v.statement = c.title;
     if (c.description) v.body = c.description;
     if (c.right_image) v.img = mediaUrl(c.right_image);
+    if (c.cta_button_label) {
+      if (Array.isArray(v.buttons) && v.buttons.length) v.buttons[0].label = c.cta_button_label;
+      else v.buttons = [{ label: c.cta_button_label, link: '', type: 'Primary' }];
+    }
   },
   push(v, api) {
     const s = sect(api, 'program_overview'); if (!s) return [];
-    return [{ id: s.id, content: { ...s.content, title: v.statement, ...(v.body ? { description: v.body } : {}), ...(isUrl(v.img) ? { right_image: v.img } : {}) } }];
+    const ctaLabel = v.buttons && v.buttons[0] && v.buttons[0].label;
+    return [{ id: s.id, content: { ...s.content, title: v.statement, ...(v.body ? { description: v.body } : {}), ...(isUrl(v.img) ? { right_image: v.img } : {}), ...(ctaLabel ? { cta_button_label: ctaLabel } : {}) } }];
   },
 });
 
-/** Card/item lists: local [{title,desc}] ↔ backend items under `type`.`listKey` with `descKey` text. */
+/** Card/item lists: local [{title,desc}] ↔ backend items under `type`.`listKey` with `descKey` text. Also syncs section title/eyebrow. */
 const cardList = (type, listKey, descKey, localKey = 'cards') => ({
   pull(v, api) {
     const c = sect(api, type) && api[type].content;
-    const items = c && c[listKey];
+    if (!c) return;
+    if (c.title) v.title = c.title;
+    if (c.eyebrow) v.eyebrow = c.eyebrow;
+    if (c.header) {
+      if (c.header.title) v.title = c.header.title;
+      if (c.header.description) v.desc = c.header.description;
+    }
+    const items = c[listKey];
     if (Array.isArray(items) && items.length) v[localKey] = items.map((it) => ({ title: it.title || '', desc: it[descKey] || '' }));
   },
   push(v, api) {
     const s = sect(api, type); if (!s) return [];
     const prev = Array.isArray(s.content && s.content[listKey]) ? s.content[listKey] : [];
     const items = (v[localKey] || []).map((k, i) => ({ ...(prev[i] || {}), title: k.title, [descKey]: k.desc }));
-    return [{ id: s.id, content: { ...s.content, [listKey]: items } }];
+    const c = s.content || {};
+    const extra = c.header !== undefined
+      ? { header: { ...(c.header || {}), ...(v.title !== undefined ? { title: v.title } : {}), ...(v.desc !== undefined ? { description: v.desc } : {}) } }
+      : { ...(v.title !== undefined ? { title: v.title } : {}), ...(v.eyebrow !== undefined ? { eyebrow: v.eyebrow } : {}) };
+    return [{ id: s.id, content: { ...c, ...extra, [listKey]: items } }];
   },
 });
 
-/** 'Focus areas' ↔ focus_areas: local items [{img,title}] ↔ backend items [{image,description}]. */
+/** 'Focus areas' ↔ focus_areas: title + items [{img,title}] ↔ backend [{image,description}]. */
 const focusAreas = () => ({
   pull(v, api) {
     const c = sect(api, 'focus_areas') && api.focus_areas.content;
-    if (Array.isArray(c && c.items) && c.items.length) v.items = c.items.map((it) => ({ img: mediaUrl(it.image), title: it.description || '' }));
+    if (!c) return;
+    if (c.title) v.title = c.title;
+    if (Array.isArray(c.items) && c.items.length) v.items = c.items.map((it) => ({ img: mediaUrl(it.image), title: it.description || '' }));
   },
   push(v, api) {
     const s = sect(api, 'focus_areas'); if (!s) return [];
     const prev = Array.isArray(s.content && s.content.items) ? s.content.items : [];
     const items = (v.items || []).map((k, i) => ({ ...(prev[i] || {}), description: k.title, ...(isUrl(k.img) ? { image: k.img } : {}) }));
-    return [{ id: s.id, content: { ...s.content, items } }];
+    return [{ id: s.id, content: { ...s.content, ...(v.title !== undefined ? { title: v.title } : {}), items } }];
   },
 });
 
-/** 'Closing band' ↔ final_cta (headline, subtext). */
+/** 'Closing band' ↔ final_cta (headline, subtext, cta_buttons). */
 const band = () => ({
   pull(v, api) {
     const c = sect(api, 'final_cta') && api.final_cta.content; if (!c) return;
     if (c.headline) v.headline = c.headline;
     if (c.subtext) v.subtext = c.subtext;
+    if (Array.isArray(c.cta_buttons) && c.cta_buttons.length) {
+      v.buttons = c.cta_buttons.map((b) => ({ label: b.label || '', link: b.link || '', type: b.type === 'secondary' ? 'Secondary' : 'Primary' }));
+    }
   },
   push(v, api) {
     const s = sect(api, 'final_cta'); if (!s) return [];
-    return [{ id: s.id, content: { ...s.content, headline: v.headline, subtext: v.subtext } }];
+    const cta_buttons = (v.buttons || []).filter((b) => b.label).map((b) => ({ label: b.label, link: b.link || '', type: (b.type || 'Primary').toLowerCase() }));
+    return [{ id: s.id, content: { ...s.content, headline: v.headline, subtext: v.subtext, ...(cta_buttons.length ? { cta_buttons } : {}) } }];
   },
 });
 
-/** 'Documents' ↔ a {title, <listKey>:[{title,description,file}]} section. */
+/** 'Documents' ↔ a {title, description, <listKey>:[{title,description,file}]} section. */
 const docList = (type, listKey) => ({
   pull(v, api) {
     const c = sect(api, type) && api[type].content; if (!c) return;
     if (c.title) v.title = c.title;
+    if (c.description) v.desc = c.description;
     if (Array.isArray(c[listKey]) && c[listKey].length) v.docs = c[listKey].map((d) => ({ title: d.title || '', desc: d.description || '', file: d.file ? mediaUrl(d.file) : '' }));
   },
   push(v, api) {
     const s = sect(api, type); if (!s) return [];
     const prev = Array.isArray(s.content && s.content[listKey]) ? s.content[listKey] : [];
     const items = (v.docs || []).map((k, i) => ({ ...(prev[i] || {}), title: k.title, description: k.desc, ...(isUrl(k.file) ? { file: k.file } : {}) }));
-    return [{ id: s.id, content: { ...s.content, title: v.title, [listKey]: items } }];
+    return [{ id: s.id, content: { ...s.content, title: v.title, ...(v.desc !== undefined ? { description: v.desc } : {}), [listKey]: items } }];
   },
 });
 
@@ -141,14 +171,21 @@ const ADAPTERS = {
     'What we do': {
       pull(v, api) {
         const c = sect(api, 'what_we_do') && api.what_we_do.content; if (!c) return;
-        if (c.header && c.header.description) v.desc = c.header.description;
+        if (c.header) {
+          if (c.header.title) v.title = c.header.title;
+          if (c.header.description) v.desc = c.header.description;
+        }
         if (Array.isArray(c.departments) && c.departments.length) v.cards = c.departments.map((d) => ({ title: d.title || '', desc: d.description || '' }));
+        if (Array.isArray(c.cta_buttons) && c.cta_buttons.length) {
+          v.buttons = c.cta_buttons.map((b) => ({ label: b.label || '', link: b.link || '', type: b.type === 'secondary' ? 'Secondary' : 'Primary' }));
+        }
       },
       push(v, api) {
         const s = sect(api, 'what_we_do'); if (!s) return [];
         const prev = Array.isArray(s.content && s.content.departments) ? s.content.departments : [];
         const departments = (v.cards || []).map((k, i) => ({ ...(prev[i] || {}), title: k.title, description: k.desc }));
-        return [{ id: s.id, content: { ...s.content, header: { ...(s.content && s.content.header || {}), description: v.desc }, departments } }];
+        const cta_buttons = (v.buttons || []).filter((b) => b.label).map((b) => ({ label: b.label, link: b.link || '', type: (b.type || 'Primary').toLowerCase() }));
+        return [{ id: s.id, content: { ...s.content, header: { ...(s.content && s.content.header || {}), title: v.title, description: v.desc }, departments, ...(cta_buttons.length ? { cta_buttons } : {}) } }];
       },
     },
     'Transformation highlights': {
@@ -174,12 +211,19 @@ const ADAPTERS = {
         const c = sect(api, 'citizen_engagement_cta') && api.citizen_engagement_cta.content; if (!c) return;
         if (c.headline) v.headline = c.headline;
         if (c.subtext) v.subtext = c.subtext;
-        if (c.cta_tag && v.buttons && v.buttons[0]) v.buttons[0].label = c.cta_tag;
+        if (c.cta_tag) {
+          if (Array.isArray(v.buttons) && v.buttons[0]) v.buttons[0].label = c.cta_tag;
+          else v.buttons = [{ label: c.cta_tag, link: 'feedback', type: 'Primary' }];
+        }
+        if (Array.isArray(c.cta_buttons) && c.cta_buttons.length) {
+          v.buttons = c.cta_buttons.map((b) => ({ label: b.label || '', link: b.link || '', type: b.type === 'secondary' ? 'Secondary' : 'Primary' }));
+        }
       },
       push(v, api) {
         const s = sect(api, 'citizen_engagement_cta'); if (!s) return [];
+        const cta_buttons = (v.buttons || []).filter((b) => b.label).map((b) => ({ label: b.label, link: b.link || '', type: (b.type || 'Primary').toLowerCase() }));
         const label = v.buttons && v.buttons[0] && v.buttons[0].label;
-        return [{ id: s.id, content: { ...s.content, headline: v.headline, subtext: v.subtext, ...(label ? { cta_tag: label } : {}) } }];
+        return [{ id: s.id, content: { ...s.content, headline: v.headline, subtext: v.subtext, ...(label ? { cta_tag: label } : {}), ...(cta_buttons.length ? { cta_buttons } : {}) } }];
       },
     },
     'News & updates': {
@@ -213,6 +257,7 @@ const ADAPTERS = {
     'Who we are': {
       pull(v, api) {
         const c = sect(api, 'hero') && api.hero.content; if (!c) return;
+        if (c.eyebrow) v.eyebrow = c.eyebrow;
         if (c.description) v.statement = c.description;
         if (Array.isArray(c.features) && c.features.length) v.pillars = c.features.map((f) => ({ title: f.label || '', desc: f.subtext || '' }));
       },
@@ -220,7 +265,7 @@ const ADAPTERS = {
         const s = sect(api, 'hero'); if (!s) return [];
         const prev = Array.isArray(s.content && s.content.features) ? s.content.features : [];
         const features = (v.pillars || []).map((k, i) => ({ ...(prev[i] || {}), label: k.title, subtext: k.desc }));
-        return [{ id: s.id, content: { ...s.content, description: v.statement, features } }];
+        return [{ id: s.id, content: { ...s.content, ...(v.eyebrow !== undefined ? { eyebrow: v.eyebrow } : {}), description: v.statement, features } }];
       },
     },
     'Vision and mission': {
@@ -238,13 +283,15 @@ const ADAPTERS = {
     'Leadership quote': {
       pull(v, api) {
         const c = sect(api, 'leadership_organization') && api.leadership_organization.content; if (!c) return;
+        if (c.title) v.quote = c.title;
         if (c.body) v.body = c.body;
         if (c.leader_name) v.by = c.leader_name;
+        if (c.leader_role) v.role = c.leader_role;
         if (c.image) v.img = mediaUrl(c.image);
       },
       push(v, api) {
         const s = sect(api, 'leadership_organization'); if (!s) return [];
-        return [{ id: s.id, content: { ...s.content, body: v.body, leader_name: v.by, ...(isUrl(v.img) ? { image: v.img } : {}) } }];
+        return [{ id: s.id, content: { ...s.content, title: v.quote, body: v.body, leader_name: v.by, ...(v.role !== undefined ? { leader_role: v.role } : {}), ...(isUrl(v.img) ? { image: v.img } : {}) } }];
       },
     },
   },

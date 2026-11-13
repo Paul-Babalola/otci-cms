@@ -185,6 +185,23 @@ export async function list(path, opts) {
   return _toPage(await cmsApiFetch(path, opts));
 }
 
+// ---------------------------------------------------------------- media upload
+
+/**
+ * Upload a File to the CMS media store.
+ * Returns the relative URL string (e.g. "storage/media/2026/11/file.jpg")
+ * stored by the backend. Store it in section content fields as-is; the
+ * mediaUrl() helper in pageSync / engine will prepend the host when needed.
+ */
+export async function uploadMedia(file) {
+  const fd = new FormData();
+  fd.append('file', file);
+  const data = await cmsApiFetch('/api/admin/media', { method: 'POST', body: fd });
+  const url = data?.url || data?.data?.url || data?.media?.url || data?.path || data?.data?.path;
+  if (!url) throw new Error('Media upload succeeded but no URL was returned.');
+  return url;
+}
+
 // ---------------------------------------------------------------- gallery helper (used by Media.jsx)
 
 export function mapFolder(f) {

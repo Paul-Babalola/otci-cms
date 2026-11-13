@@ -3,7 +3,7 @@ import { S, UI, commit, persist, log, toast, go, comp, secState, secSchema, page
 import { META, DEPTS } from '../data/content.js';
 import { Icon, Pill, Mini, Stepper, Mark } from '../components/ui.jsx';
 import { ago, clone, pick, readImg, RM } from '../lib/util.js';
-import { cmsApiFetch } from '../lib/cmsApi.js';
+import { cmsApiFetch, uploadMedia } from '../lib/cmsApi.js';
 import { pageSynced, pageSyncLoad, pageSyncPull, pageSyncSave, pageSyncVisibility, pageSyncPublish } from '../lib/pageSync.js';
 
 const getP = (o, p) => p.reduce((a, k) => a?.[k], o);
@@ -119,10 +119,10 @@ function SectionList({ pid }) {
         {ss.length ? ss.map((s, i) => {
           const c = comp(pid, s);
           return (
-            <div key={s.uid} data-row={i} draggable={drag === i}
+            <div key={s.uid} data-row={i} draggable={true}
               className={`srow ${drag === i ? 'dragging' : ''} ${over === i && drag !== i ? 'drop' : ''} ${flash === i ? 'flash' : ''}`}
               onAnimationEnd={() => flash === i && setFlash(null)}
-              onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(i)); }}
+              onDragStart={(e) => { setDrag(i); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(i)); }}
               onDragEnd={() => { setDrag(null); setOver(null); }}
               onDragOver={(e) => { if (!e.dataTransfer.types.includes('text/plain')) return; e.preventDefault(); setOver(i); }}
               onDrop={(e) => {
@@ -255,6 +255,19 @@ function Control({ f, vals, path, s, onChange }) {
   const blank = !String(v).trim() ? 'blank' : '';
   const set = (x) => { vals[f.k] = x; onChange(); };
   const [over, setOver] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  const doUpload = async (file) => {
+    setUploading(true);
+    try {
+      const url = await uploadMedia(file);
+      set(url);
+    } catch (e) {
+      toast(`Upload failed — ${e.message || 'try again'}`, { icon: 'x' });
+    } finally {
+      setUploading(false);
+    }
+  };
 
   switch (f.t) {
     case 'textarea':
@@ -269,14 +282,17 @@ function Control({ f, vals, path, s, onChange }) {
         </div>
       );
     case 'image': {
-      const browse = () => pick('image/*', false, (file) => readImg(file, (src) => set(src), imgError));
+      const browse = () => pick('image/*', false, doUpload);
+      const imgSrc = v ? (/^https?:\/\//i.test(v) ? v : (import.meta.env?.VITE_API_BASE_URL || '') + '/' + v.replace(/^\/+/, '')) : '';
       return (
-        <div className={`media ${f.shape === 'round' ? 'round' : ''} ${v ? 'has' : ''} ${over ? 'over' : ''}`}
+        <div className={`media ${f.shape === 'round' ? 'round' : ''} ${v ? 'has' : ''} ${over ? 'over' : ''} ${uploading ? 'uploading' : ''}`}
           onDragOver={(e) => { if (!e.dataTransfer.types.includes('Files')) return; e.preventDefault(); setOver(true); }}
           onDragLeave={() => setOver(false)}
-          onDrop={(e) => { e.preventDefault(); setOver(false); const file = e.dataTransfer.files[0]; if (file) readImg(file, (src) => set(src), imgError); }}>
-          {v ? (
-            <><img src={v} alt="" /><div className="ov"><button className="mbtn" onClick={browse}><Icon n="upload" />Replace</button><button className="mbtn r" onClick={() => set('')}>Remove</button></div></>
+          onDrop={(e) => { e.preventDefault(); setOver(false); const file = e.dataTransfer.files[0]; if (file) doUpload(file); }}>
+          {uploading ? (
+            <div className="up"><span className="spin" /><span>Uploading…</span></div>
+          ) : v ? (
+            <><img src={imgSrc} alt="" /><div className="ov"><button className="mbtn" onClick={browse}><Icon n="upload" />Replace</button><button className="mbtn r" onClick={() => set('')}>Remove</button></div></>
           ) : (
             <button className="up" onClick={browse}><Icon n="image" /><span>Drop an image or <u>browse</u></span><small>JPG, PNG or WebP</small></button>
           )}
@@ -284,9 +300,12 @@ function Control({ f, vals, path, s, onChange }) {
       );
     }
     case 'file': {
-      const browse = () => pick('.pdf,.doc,.docx,application/pdf', false, (file) => set(file.name));
-      return v ? (
-        <div className="file has"><span className="fi">PDF</span><div><b>{v}</b><span>Attached</span></div>
+      const browse = () => pick('.pdf,.doc,.docx,application/pdf', false, doUpload);
+      const fileName = v ? v.split('/').pop() : '';
+      return uploading ? (
+        <div className="file"><span className="spin" /><div><b>Uploading…</b></div></div>
+      ) : v ? (
+        <div className="file has"><span className="fi">PDF</span><div><b>{fileName}</b><span>Attached</span></div>
           <span className="acts"><button className="ib" aria-label="Replace file" onClick={browse}><Icon n="upload" /></button><button className="ib danger" aria-label="Remove file" onClick={() => set('')}><Icon n="trash" /></button></span></div>
       ) : (
         <button className="file" onClick={browse}><Icon n="upload" /><div><b>Upload a PDF or document</b><span>20 MB max</span></div></button>
