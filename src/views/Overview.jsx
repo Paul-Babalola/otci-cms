@@ -1,7 +1,14 @@
+import { useEffect, useState } from 'react';
 import { S, UI, go, totals, pageComp, pageState } from '../store.js';
 import { META, PIDS, DEPTS } from '../data/content.js';
 import { Icon, Pill, Ticks, Stepper, Timeline, Grow, Count } from '../components/ui.jsx';
 import { DAY } from '../lib/util.js';
+import { adminOverview } from '../lib/api/index.js';
+
+const VERB_MAP = {
+  sent_for_review: 'sent for review', withdrew_review: 'discarded',
+  reordered: 'edited', uploaded: 'uploaded to', removed: 'deleted',
+};
 
 const filterTo = (status) => { UI.filter = { dept: 'all', status, q: '' }; go('pages'); };
 
@@ -10,12 +17,46 @@ function Chip({ status, color, children }) {
 }
 
 export default function Overview() {
+  const [api, setApi] = useState(null);
+
+  useEffect(() => {
+    adminOverview.get()
+      .then((dashboard) => setApi(dashboard))
+      .catch(() => {});
+  }, []);
+
   const t = totals();
   const hour = new Date().getHours(), greet = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
-  const health = Math.round(t.health * 100), livePct = t.secs ? t.live / t.secs : 1;
+
+  // Prefer live API counts when available, fall back to local store computations.
+  const apiSecs = api?.sections;
+  const apiMedia = api?.media;
+  const apiPages = api?.pages;
+
+  const secs = apiSecs?.total ?? t.secs;
+  const live = apiSecs?.live ?? t.live;
+  const hidden = apiSecs?.hidden ?? t.hidden;
+  const imgs = apiMedia?.images ?? t.imgs;
+  const folders = apiMedia?.folders ?? t.folders;
+  const visFolders = apiMedia?.visible_folders ?? t.visFolders;
+  const noCover = apiMedia?.empty_folders ?? t.noCover;
+  const pagesPublished = apiPages?.published ?? t.published;
+  const pagesChanges = apiPages?.changes ?? t.changes;
+  const pagesReview = apiPages?.in_review ?? t.review;
+
+  const health = Math.round(t.health * 100), livePct = secs ? live / secs : 1;
   const days = [...Array(7)].map((_, i) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - (6 - i)); return d; });
   const counts = days.map((d) => S.activity.filter((a) => a.t >= +d && a.t < +d + DAY).length);
   const max = Math.max(4, ...counts), hasDemo = S.activity.some((a) => a.demo);
+
+  const recentActivity = api?.recent_activity?.length
+    ? api.recent_activity.map((a) => ({
+        t: new Date(a.created_at).getTime(),
+        who: a.actor, verb: VERB_MAP[a.action] || a.action_label || a.action,
+        target: a.subject, page: a.page, demo: false, fresh: false,
+      }))
+    : S.activity.slice(0, 6);
+
   const pages = (n) => `${n} ${n === 1 ? 'page' : 'pages'}`;
 
   let brief;
@@ -30,26 +71,26 @@ export default function Overview() {
       <div className="kpis">
         <section className="card kpi">
           <div className="kpi-top"><span>Content health</span><span className={`pill ${health >= 80 ? 'ok' : health >= 60 ? 'warn' : 'bad'}`}>{health >= 80 ? 'Good' : health >= 60 ? 'Fair' : 'Needs work'}</span></div>
-          <div className="kpi-v"><b className="num"><Count to={health} /></b><span className="of">%</span><span>of fields filled across {t.secs} sections</span></div>
+          <div className="kpi-v"><b className="num"><Count to={health} /></b><span className="of">%</span><span>of fields filled across {secs} sections</span></div>
           <Ticks n={48} frac={t.health} grad />
           <button className="foot-link" onClick={() => filterTo('thin')}><span>{t.thin} sections below 60% complete</span><Icon n="chev" /></button>
         </section>
         <section className="card kpi">
-          <div className="kpi-top"><span>Sections live</span><span className="sub">{t.hidden} hidden</span></div>
-          <div className="kpi-v"><b className="num"><Count to={t.live} /></b><span className="of">/{t.secs}</span></div>
+          <div className="kpi-top"><span>Sections live</span><span className="sub">{hidden} hidden</span></div>
+          <div className="kpi-v"><b className="num"><Count to={live} /></b><span className="of">/{secs}</span></div>
           <div className="meter"><Grow as="div" className="fill" w={`${Math.max(livePct * 100 - 6, 8)}%`}>{Math.round(livePct * 100)}%</Grow><span className="knob" /><span className="rest">{Array.from({ length: Math.max(3, Math.round((1 - livePct) * 24)) }, (_, i) => <i key={i} />)}</span></div>
-          <button className="foot-link" onClick={() => go('pages')}><span>{t.secs} sections on {PIDS.length} pages, {t.drafts} in draft</span><Icon n="chev" /></button>
+          <button className="foot-link" onClick={() => go('pages')}><span>{secs} sections on {PIDS.length} pages, {t.drafts} in draft</span><Icon n="chev" /></button>
         </section>
         <section className="card kpi">
-          <div className="kpi-top"><span>Media library</span><span className="sub">{t.visFolders} of {t.folders} folders visible</span></div>
-          <div className="kpi-v"><b className="num"><Count to={t.imgs} /></b><span>images in {t.folders} folders</span></div>
+          <div className="kpi-top"><span>Media library</span><span className="sub">{visFolders} of {folders} folders visible</span></div>
+          <div className="kpi-v"><b className="num"><Count to={imgs} /></b><span>images in {folders} folders</span></div>
           <div className="stack">{S.gallery.map((f, i) => <Grow key={f.id} g={Math.max(f.images.length, 0.4)} title={`${f.title || 'Untitled'}: ${f.images.length}`} style={{ background: ['var(--accent)', '#7FD1AC', 'var(--line-2)', '#94A3B8', '#F39A45'][i % 5] }} />)}</div>
-          <button className="foot-link" onClick={() => go('media')}><span>{t.noCover ? `${t.noCover} ${t.noCover === 1 ? 'folder has' : 'folders have'} no images yet` : 'Every folder has a cover image'}</span><Icon n="chev" /></button>
+          <button className="foot-link" onClick={() => go('media')}><span>{noCover ? `${noCover} ${noCover === 1 ? 'folder has' : 'folders have'} no images yet` : 'Every folder has a cover image'}</span><Icon n="chev" /></button>
         </section>
       </div>
       <div className="ov">
         <div className="col">
-          <section className="card"><div className="card-h"><h2 className="h2">Publishing pipeline</h2><span className="sub">Pages by stage</span></div><Stepper counts={[t.changes, t.review, t.published]} /></section>
+          <section className="card"><div className="card-h"><h2 className="h2">Publishing pipeline</h2><span className="sub">Pages by stage</span></div><Stepper counts={[pagesChanges, pagesReview, pagesPublished]} /></section>
           <section className="card">
             <div className="card-h" style={{ paddingBottom: 12 }}><h2 className="h2">Pages</h2><a className="btn btn-g" href="#pages" style={{ height: 32 }} onClick={(e) => { e.preventDefault(); go('pages'); }}>See all</a></div>
             {PIDS.map((pid) => {
@@ -77,7 +118,7 @@ export default function Overview() {
               ))}
             </div></div>
           </section>
-          <section className="card"><div className="card-h"><h2 className="h2">Recent activity</h2><a className="btn btn-g" href="#activity" style={{ height: 32 }} onClick={(e) => { e.preventDefault(); go('activity'); }}>View all</a></div><Timeline list={S.activity.slice(0, 6)} compact /></section>
+          <section className="card"><div className="card-h"><h2 className="h2">Recent activity</h2><a className="btn btn-g" href="#activity" style={{ height: 32 }} onClick={(e) => { e.preventDefault(); go('activity'); }}>View all</a></div><Timeline list={recentActivity} compact /></section>
         </div>
       </div>
     </>

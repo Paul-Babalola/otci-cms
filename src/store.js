@@ -131,6 +131,7 @@ export function toggleTheme() { S.theme = isDark() ? 'light' : 'dark'; applyThem
 
 export function validRoutes() {
   return ['overview', 'pages', 'charters', 'build', 'media', 'activity', 'admins',
+    'feedback', 'contacts', 'subscribers',
     ...S.charters.map((c) => 'charter-' + c._k), ...PIDS.map((p) => 'page-' + p)];
 }
 

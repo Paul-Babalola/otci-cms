@@ -1,12 +1,46 @@
+import { useEffect } from 'react';
 import { S, UI, commit, go, chInit } from '../store.js';
 import { chIssues, chState } from '../lib/charterLogic.js';
 import { Icon, Mic, ChPill } from '../components/ui.jsx';
 import { chNew, chFill, chTemplate, chExport, chImport } from './Charter.jsx';
+import { adminCharters } from '../lib/api/index.js';
 
 const ORDER = { changes: 0, draft: 1, published: 2, coming: 3 };
 
 export default function Charters() {
   chInit();
+
+  useEffect(() => {
+    adminCharters.list()
+      .then(({ items }) => {
+        if (!items.length) return;
+        const edited = new Set(S.charters.filter((c) => c._dirty || c._fresh).map((c) => String(c._k)));
+        const mapped = items.map((c) => {
+          const existing = S.charters.find((x) => String(x._k) === String(c.key) || x.id === c.id);
+          if (existing && edited.has(String(existing._k))) return existing;
+          return {
+            _k: String(c.key),
+            id: c.id,
+            name: c.name,
+            short: c.short || '',
+            sector: c.sector || '',
+            icon: c.icon || 'gov',
+            status: c.state === 'coming' ? 'coming' : (c.state === 'published' || c.state === 'changes') ? 'published' : 'draft',
+            _dirty: c.state === 'changes',
+            _apiKey: c.key,
+            _issues_count: c.issues_count ?? null,
+            services_count: c.services_count ?? 0,
+            fee_tables_count: c.fee_tables_count ?? 0,
+            services: [],
+            schedules: [],
+            mandates: [],
+          };
+        });
+        S.charters = [...mapped, ...S.charters.filter((c) => c._fresh)];
+        commit();
+      })
+      .catch(() => {});
+  }, []);
   const A = S.charters, CU = UI.ch, q = CU.q.trim().toLowerCase();
   const rows = A.filter((c) => (CU.st === 'all' || chState(c) === CU.st || (CU.st === 'draft' && chState(c) === 'changes')) && (!q || `${c.name} ${c.short} ${c.sector}`.toLowerCase().includes(q)))
     .sort((a, b) => (ORDER[chState(a)] - ORDER[chState(b)]) || String(a.name).localeCompare(b.name));
@@ -46,14 +80,17 @@ export default function Charters() {
           <tbody>
             {rows.map((c) => {
               const is = chIssues(c), open = () => go('charter-' + c._k);
+              const issueCount = c._issues_count != null ? c._issues_count : is.length;
+              const svcCount = c._apiKey != null ? (c.services_count ?? (c.services || []).length) : (c.services || []).length;
+              const feeCount = c._apiKey != null ? (c.fee_tables_count ?? (c.schedules || []).length) : (c.schedules || []).length;
               return (
                 <tr key={c._k} tabIndex={0} onClick={open} onKeyDown={(e) => { if (e.key === 'Enter') open(); }}>
                   <td><div className="first"><span className="ch-ico"><Mic k={c.icon} /></span><div>{c.short || c.name || 'Untitled charter'}<small>{c.short ? c.name : ''}</small></div></div></td>
                   <td>{c.sector || '—'}</td>
-                  <td className="num">{(c.services || []).length || '—'}</td>
-                  <td className="num">{(c.schedules || []).length || '—'}</td>
+                  <td className="num">{svcCount || '—'}</td>
+                  <td className="num">{feeCount || '—'}</td>
                   <td><ChPill c={c} /></td>
-                  <td>{is.length ? <span className="pill warn">{is.length} to fix</span> : <span className="pill ok"><Icon n="check" />Ready</span>}</td>
+                  <td>{issueCount ? <span className="pill warn">{issueCount} to fix</span> : <span className="pill ok"><Icon n="check" />Ready</span>}</td>
                   <td style={{ textAlign: 'right', color: 'var(--faint)' }}><Icon n="chev" /></td>
                 </tr>
               );

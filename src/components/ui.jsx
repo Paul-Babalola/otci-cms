@@ -18,7 +18,7 @@ export function Mic({ k, size = 18 }) {
 export const Mark = () => <span className="mark"><img src={LOGO} alt="" /></span>;
 
 export function Pill({ k, extra = '', label }) {
-  const p = PILL[k];
+  const p = PILL[k] || PILL.draft;
   return <span className={`pill ${p[1]} ${extra}`}><Icon n={p[2]} />{label || p[0]}</span>;
 }
 

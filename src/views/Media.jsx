@@ -2,18 +2,32 @@ import { useEffect, useRef, useState } from 'react';
 import { S, UI, commit, persist, save, log, toast, go, totals } from '../store.js';
 import { Icon, Pill, Count } from '../components/ui.jsx';
 import { pick, readImg } from '../lib/util.js';
+import { cmsApiFetch, mapFolder } from '../lib/cmsApi.js';
 
-export function newFolder() {
-  const f = { id: 'f' + Date.now(), title: '', desc: '', visible: false, images: [] };
-  S.gallery.push(f); log('created', 'New folder', ''); persist();
-  UI.folder = f.id; UI.focusTitle = true; commit();
+export async function newFolder() {
+  try {
+    const result = await cmsApiFetch('/api/admin/gallery', { method: 'POST', body: { title: '', description: '', is_visible: false } });
+    const f = mapFolder(result);
+    S.gallery.push(f); log('created', 'New folder', ''); persist();
+    UI.folder = f.id; UI.focusTitle = true; commit();
+  } catch (_) {
+    const f = { id: 'f' + Date.now(), title: '', desc: '', visible: false, images: [] };
+    S.gallery.push(f); log('created', 'New folder', ''); persist();
+    UI.folder = f.id; UI.focusTitle = true; commit();
+  }
 }
 
 export function Media() {
   const t = totals();
+  useEffect(() => {
+    cmsApiFetch('/api/admin/gallery').then((data) => {
+      const rows = Array.isArray(data) ? data : (data?.data ?? []);
+      if (rows.length) { S.gallery = rows.map(mapFolder); commit(); }
+    }).catch(() => {});
+  }, []);
   return (
     <>
-      <div className="h-row"><div><h1 className="h1">Media library</h1><p className="lede">Folders shown in the public gallery. The last uploaded image becomes a folder’s cover.</p></div><button className="btn btn-p" data-a="newfolder" onClick={newFolder}><Icon n="plus" />New folder</button></div>
+      <div className="h-row"><div><h1 className="h1">Media library</h1><p className="lede">Folders shown in the public gallery. The last uploaded image becomes a folder's cover.</p></div><button className="btn btn-p" data-a="newfolder" onClick={newFolder}><Icon n="plus" />New folder</button></div>
       <div className="mstats">
         <div className="card"><b className="num"><Count to={t.folders} /></b><span className="sub">Folders</span></div>
         <div className="card"><b className="num"><Count to={t.imgs} /></b><span className="sub">Images</span></div>
@@ -40,24 +54,51 @@ export function Folder() {
   const [over, setOver] = useState(false);
   const [fresh, setFresh] = useState(null);
   const titleRef = useRef(null);
+  const editTimer = useRef(null);
   useEffect(() => { if (UI.focusTitle) { UI.focusTitle = false; setTimeout(() => titleRef.current?.focus(), 50); } }, []);
   if (!f) { UI.folder = null; return <Media />; }
 
-  // TODO(api): upload to the media store. No gallery upload endpoint exists yet.
-  const add = (file) => readImg(file, (src, name) => {
-    f.images.push({ name, src }); setFresh(f.images.length - 1);
-    log('uploaded to', f.title || 'Untitled folder', ''); save();
-    toast('Uploaded and set as cover', { icon: 'upload' });
-  }, () => toast('That file isn’t an image we can read', { icon: 'x' }));
+  const add = (file) => {
+    const fd = new FormData(); fd.append('image', file);
+    cmsApiFetch(`/api/admin/gallery/${f.id}/images`, { method: 'POST', body: fd })
+      .then((im) => {
+        f.images.push({ id: im.id, name: im.name || file.name, src: im.url }); setFresh(f.images.length - 1);
+        log('uploaded to', f.title || 'Untitled folder', ''); save();
+        toast('Uploaded and set as cover', { icon: 'upload' });
+      })
+      .catch(() => {
+        readImg(file, (src, name) => {
+          f.images.push({ name, src }); setFresh(f.images.length - 1);
+          log('uploaded to', f.title || 'Untitled folder', ''); save();
+          toast('Uploaded and set as cover', { icon: 'upload' });
+        }, () => toast("That file isn't an image we can read", { icon: 'x' }));
+      });
+  };
 
-  const toggle = () => { f.visible = !f.visible; log(f.visible ? 'showed' : 'hid', f.title || 'Untitled folder', ''); save(); toast(f.visible ? 'Folder is visible in the gallery' : 'Folder hidden from the gallery', { icon: f.visible ? 'eye' : 'eyeoff' }); };
+  const toggle = () => {
+    f.visible = !f.visible;
+    cmsApiFetch(`/api/admin/gallery/${f.id}/visibility`, { method: 'PATCH', body: { is_visible: f.visible } }).catch(() => {});
+    log(f.visible ? 'showed' : 'hid', f.title || 'Untitled folder', ''); save();
+    toast(f.visible ? 'Folder is visible in the gallery' : 'Folder hidden from the gallery', { icon: f.visible ? 'eye' : 'eyeoff' });
+  };
   const del = () => {
+    cmsApiFetch(`/api/admin/gallery/${f.id}`, { method: 'DELETE' }).catch(() => {});
     const k = S.gallery.indexOf(f); S.gallery.splice(k, 1); UI.folder = null; save();
     toast(`Deleted ${f.title || 'folder'}`, { icon: 'trash', undo: () => { S.gallery.splice(k, 0, f); save(); } });
   };
   const cover = (j) => { const [im] = f.images.splice(j, 1); f.images.push(im); save(); toast('Cover updated', { icon: 'star' }); };
-  const rm = (j) => { const [im] = f.images.splice(j, 1); save(); toast('Image removed', { icon: 'trash', undo: () => { f.images.splice(j, 0, im); save(); } }); };
-  const edit = (k, v) => { f[k] = v; save(); };
+  const rm = (j) => {
+    const [im] = f.images.splice(j, 1);
+    if (im?.id) cmsApiFetch(`/api/admin/gallery/${f.id}/images/${im.id}`, { method: 'DELETE' }).catch(() => {});
+    save(); toast('Image removed', { icon: 'trash', undo: () => { f.images.splice(j, 0, im); persist(); commit(); } });
+  };
+  const edit = (k, v) => {
+    f[k] = v; save();
+    clearTimeout(editTimer.current);
+    editTimer.current = setTimeout(() => {
+      cmsApiFetch(`/api/admin/gallery/${f.id}`, { method: 'PUT', body: { title: f.title, description: f.desc, is_visible: f.visible } }).catch(() => {});
+    }, 800);
+  };
   const n = f.images.length;
 
   return (

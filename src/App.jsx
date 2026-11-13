@@ -3,6 +3,8 @@ import { S, UI, useStore, go, commit, save, toggleTheme, isDark, applyTheme, val
 import { META, PIDS, DEPTS, PILL } from './data/content.js';
 import { Icon, Mark, Toasts, Modals } from './components/ui.jsx';
 import { SITE_URL } from './lib/util.js';
+import { auth as cmsAuth } from './lib/api/index.js';
+import { onCmsUnauthorized } from './lib/cmsApi.js';
 import Login from './views/Login.jsx';
 import Overview from './views/Overview.jsx';
 import Pages from './views/Pages.jsx';
@@ -10,6 +12,9 @@ import Editor from './views/Editor.jsx';
 import { Media, Folder } from './views/Media.jsx';
 import Activity from './views/Activity.jsx';
 import Admins, { inviteModal } from './views/Admins.jsx';
+import Feedback from './views/Feedback.jsx';
+import Contacts from './views/Contacts.jsx';
+import Subscribers from './views/Subscribers.jsx';
 import Build from './views/Build.jsx';
 import Charters from './views/Charters.jsx';
 import Charter, { chNew } from './views/Charter.jsx';
@@ -37,7 +42,7 @@ function Crumbs() {
     const f = S.gallery.find((x) => x.id === UI.folder);
     return <>{link('media', 'Media library', () => { UI.folder = null; commit(); })}<Icon n="chev" /><b>{f?.title || 'Untitled folder'}</b></>;
   }
-  const map = { build: 'How it’s built', charters: 'Service charters', overview: 'Overview', pages: 'Pages', media: 'Media library', activity: 'Activity', admins: 'Department admins' };
+  const map = { build: 'How it’s built', charters: 'Service charters', overview: 'Overview', pages: 'Pages', media: 'Media library', activity: 'Activity', admins: 'Department admins', feedback: 'Citizen feedback', contacts: 'Contact requests', subscribers: 'Newsletter subscribers' };
   return <b>{map[r] || ''}</b>;
 }
 
@@ -48,6 +53,9 @@ function View() {
   if (r === 'media') return UI.folder != null ? <Folder /> : <Media />;
   if (r === 'activity') return <Activity />;
   if (r === 'admins') return <Admins />;
+  if (r === 'feedback') return <Feedback />;
+  if (r === 'contacts') return <Contacts />;
+  if (r === 'subscribers') return <Subscribers />;
   if (r === 'build') return <Build />;
   if (r === 'charters') return <Charters />;
   if (r.startsWith('charter-')) return <Charter k={r.slice(8)} />;
@@ -90,11 +98,18 @@ function Shell() {
             );
           })}
         </div>
+        <div className="grp"><span>Inbox</span>
+          {nv('feedback', 'star', 'Citizen feedback')}
+          {nv('contacts', 'mail', 'Contact requests')}
+          {nv('subscribers', 'send', 'Subscribers')}
+        </div>
         <div className="grp"><span>Manage</span>{nv('admins', 'users', 'Department admins', S.admins.length)}{nv('build', 'layers', 'How it’s built')}</div>
         <div className="side-foot"><div className="me">
           <div className="av" style={{ '--c': 'var(--accent)' }}>SA</div>
           <div style={{ minWidth: 0 }}><b>Super Admin</b><small>{S.email || 'Signed in'}</small></div>
-          <button className="ib" aria-label="Log out" title="Log out" onClick={() => { S.authed = false; save(); go('login'); }}><Icon n="logout" /></button>
+          <button className="ib" aria-label="Log out" title="Log out" onClick={() => {
+            cmsAuth.logout().finally(() => { S.authed = false; save(); go('login'); });
+          }}><Icon n="logout" /></button>
         </div></div>
       </aside>
       <div className={`side-scrim ${UI.nav ? 'show' : ''}`} onClick={closeNav} />
@@ -117,6 +132,8 @@ export default function App() {
   useStore();
 
   useEffect(() => {
+    onCmsUnauthorized(() => { S.authed = false; save(); go('login'); });
+
     applyTheme();
     const h = location.hash.slice(1);
     UI.route = S.authed ? (validRoutes().includes(h) ? h : 'overview') : 'login';

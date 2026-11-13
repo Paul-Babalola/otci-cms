@@ -3,13 +3,15 @@ import { S, UI, commit, persist, log, toast, go, comp, secState, secSchema, page
 import { META, DEPTS } from '../data/content.js';
 import { Icon, Pill, Mini, Stepper, Mark } from '../components/ui.jsx';
 import { ago, clone, pick, readImg, RM } from '../lib/util.js';
+import { cmsApiFetch } from '../lib/cmsApi.js';
+import { pageSynced, pageSyncLoad, pageSyncPull, pageSyncSave, pageSyncVisibility, pageSyncPublish } from '../lib/pageSync.js';
 
 const getP = (o, p) => p.reduce((a, k) => a?.[k], o);
 const setP = (o, p, v) => { getP(o, p.slice(0, -1))[p[p.length - 1]] = v; };
 const idOf = (p) => JSON.stringify(p);
 
 function markDirty(s) { s.dirty = true; s.editedAt = Date.now(); persist(); commit(); }
-const imgError = () => toast('That file isn’t an image we can read', { icon: 'x' });
+const imgError = () => toast("That file isn't an image we can read", { icon: 'x' });
 
 // ---------------------------------------------------------------- page editor
 
@@ -18,15 +20,33 @@ export default function Editor({ pid }) {
   const [publishing, setPublishing] = useState(false);
   const [stepKey, setStepKey] = useState(0);
 
-  const publish = () => {
+  // Pull the backend's current content into the local forms (synced pages only).
+  useEffect(() => {
+    if (!pageSynced(pid)) return;
+    let on = true;
+    pageSyncLoad(pid).then((map) => {
+      if (!on || !map) return;
+      if (pageSyncPull(pid, p.sections, (s) => secSchema(pid, s).title, clone)) { persist(); commit(); }
+    });
+    return () => { on = false; };
+  }, [pid]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const publish = async () => {
     setPublishing(true);
-    // TODO(api): publish the page's sections. No CMS content endpoint exists yet.
-    setTimeout(() => {
-      p.sections.forEach((s) => { s.dirty = false; s.pub = clone(s.v); });
-      p.review = false; p.publishedAt = Date.now();
-      log('published', m.short || m.name, pid); persist(); setPublishing(false); setStepKey((k) => k + 1); commit();
-      toast(`Published ${m.short || m.name}`, { icon: 'globe' });
-    }, 700);
+    if (pageSynced(pid)) {
+      try { await pageSyncPublish(pid); }
+      catch (e) {
+        setPublishing(false);
+        toast(e.message || 'Could not publish to the server.', { icon: 'x' });
+        return;
+      }
+    } else {
+      try { await cmsApiFetch(`/api/admin/pages/${pid}/publish`, { method: 'POST' }); } catch (_) {}
+    }
+    p.sections.forEach((s) => { s.dirty = false; s.pub = clone(s.v); });
+    p.review = false; p.publishedAt = Date.now();
+    log('published', m.short || m.name, pid); persist(); setPublishing(false); setStepKey((k) => k + 1); commit();
+    toast(`Published ${m.short || m.name}`, { icon: 'globe' });
   };
   const review = () => { p.review = true; log('sent for review', m.short || m.name, pid); persist(); setStepKey((k) => k + 1); commit(); toast('Sent for review', { icon: 'send' }); };
   const withdraw = () => { p.review = false; persist(); commit(); toast('Review withdrawn', { icon: 'undo' }); };
@@ -81,7 +101,10 @@ function SectionList({ pid }) {
     const [s] = ss.splice(i, 1); ss.splice(j, 0, s); markDirty(s); setFlash(j);
   };
   const toggle = (i) => {
-    const s = ss[i]; s.visible = !s.visible; markDirty(s); log(s.visible ? 'showed' : 'hid', s.title, pid); commit();
+    const s = ss[i]; s.visible = !s.visible; markDirty(s);
+    pageSyncVisibility(pid, secSchema(pid, s).title, s.visible)
+      .catch((e) => toast(`Visibility not saved to the server — ${e.message || 'request failed'}`, { icon: 'x' }));
+    log(s.visible ? 'showed' : 'hid', s.title, pid); commit();
     toast(`${s.title} ${s.visible ? 'will show' : 'is hidden'} once you publish`, { icon: s.visible ? 'eye' : 'eyeoff' });
   };
   const del = (i) => {
@@ -132,12 +155,19 @@ function SectionForm({ pid, i }) {
   const s = S.pages[pid].sections[i];
   const [saving, setSaving] = useState(false);
   const t = useRef();
+  const saveTimer = useRef(null);
   if (!s) return null;
   const schema = secSchema(pid, s), c = comp(pid, s);
 
   const change = () => {
     markDirty(s);
     setSaving(true); clearTimeout(t.current); t.current = setTimeout(() => setSaving(false), 500);
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      pageSyncSave(pid, schema.title, s.v)
+        .then(({ synced }) => { if (synced) toast('Draft saved to the server', { icon: 'check' }); })
+        .catch((e) => toast(`Not saved to the server — ${e.message || 'request failed'}. ${e.status === 401 ? 'Sign in and try again.' : ''}`, { icon: 'x' }));
+    }, 1500);
   };
   const close = () => { UI.lastClosed = i; UI.slideBack = true; UI.open = null; commit(); setTimeout(() => { UI.slideBack = false; }, 400); };
   const discard = () => { s.v = clone(s.pub); s.dirty = false; persist(); log('discarded', s.title, pid); commit(); toast('Changes discarded', { icon: 'undo' }); };

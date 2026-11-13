@@ -1,8 +1,34 @@
+import { useEffect } from 'react';
 import { S, UI, commit } from '../store.js';
 import { META, DEPTS } from '../data/content.js';
 import { Icon, Timeline } from '../components/ui.jsx';
+import { adminOverview } from '../lib/api/index.js';
+
+const VERB_MAP = {
+  sent_for_review: 'sent for review', withdrew_review: 'discarded',
+  reordered: 'edited', uploaded: 'uploaded to', removed: 'deleted',
+};
 
 export default function Activity() {
+  useEffect(() => {
+    adminOverview.activity({ per_page: 100 })
+      .then(({ items }) => {
+        if (!items.length) return;
+        S.activity = items.map((a) => ({
+          t: new Date(a.created_at).getTime(),
+          who: a.actor,
+          verb: VERB_MAP[a.action] || a.action_label || a.action,
+          target: a.subject,
+          page: a.page,
+          demo: false,
+          fresh: false,
+        }));
+        S.activity.sort((a, b) => b.t - a.t);
+        commit();
+      })
+      .catch(() => {});
+  }, []);
+
   const list = S.activity.filter((a) => UI.act === 'all' || META[a.page]?.dept === UI.act);
   return (
     <>

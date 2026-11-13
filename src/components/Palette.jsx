@@ -8,7 +8,7 @@ import { inviteModal } from '../views/Admins.jsx';
 
 function items() {
   return [
-    ...[['overview', 'Overview', 'home'], ['pages', 'Pages', 'pages'], ['charters', 'Service charters', 'file'], ['media', 'Media library', 'image'], ['activity', 'Activity', 'pulse'], ['admins', 'Department admins', 'users']]
+    ...[['overview', 'Overview', 'home'], ['pages', 'Pages', 'pages'], ['charters', 'Service charters', 'file'], ['media', 'Media library', 'image'], ['activity', 'Activity', 'pulse'], ['admins', 'Department admins', 'users'], ['feedback', 'Citizen feedback', 'star'], ['contacts', 'Contact requests', 'mail'], ['subscribers', 'Newsletter subscribers', 'send']]
       .map(([r, l, i]) => ({ g: 'Go to', l, i, run: () => go(r) })),
     ...PIDS.map((pid) => ({ g: 'Pages', l: META[pid].name, i: 'pages', sub: META[pid].url, run: () => go('page-' + pid) })),
     ...PIDS.flatMap((pid) => S.pages[pid].sections.map((s, k) => ({ g: 'Sections', l: s.title, i: 'layers', sub: META[pid].short || META[pid].name, run: () => { go('page-' + pid); UI.open = k; commit(); } }))),
