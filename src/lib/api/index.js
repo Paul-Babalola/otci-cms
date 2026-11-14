@@ -57,10 +57,10 @@ export const auth = {
     call(`${AUTH}/reset-password`, { method: 'POST', body: input, auth: false, ...opts }),
 
   validateOnboardingToken: (token, opts) =>
-    call(`${AUTH}/onboarding/validate`, { method: 'POST', body: { token }, auth: false, ...opts }),
+    call(`${AUTH}/validate-onboarding-token`, { method: 'POST', body: { token }, auth: false, ...opts }),
 
   completeOnboarding: (input, opts) =>
-    call(`${AUTH}/onboarding/complete`, { method: 'POST', body: input, auth: false, ...opts }),
+    call(`${AUTH}/complete-onboarding`, { method: 'POST', body: input, auth: false, ...opts }),
 
   isSignedIn: () => !!getCmsToken(),
 };
@@ -124,6 +124,10 @@ export const adminGallery = {
     cmsApiFetch(`${ADM}/gallery/${seg(id)}`, { method: 'DELETE', ...opts }),
   toggleVisibility: (id, visible, opts) =>
     call(`${ADM}/gallery/${seg(id)}/visibility`, { method: 'PATCH', body: { is_visible: visible }, ...opts }),
+  reorder: (folderIds, opts) =>
+    call(`${ADM}/gallery/reorder`, { method: 'PUT', body: { folder_ids: folderIds }, ...opts }),
+  publish: (opts) =>
+    call(`${ADM}/gallery/publish`, { method: 'POST', ...opts }),
   uploadImage: (folderId, file, opts) =>
     call(`${ADM}/gallery/${seg(folderId)}/images`, {
       method: 'POST', body: toFormData({ image: file }), ...opts,
@@ -140,6 +144,8 @@ export const adminPages = {
   publish: (id, opts) => call(`${ADM}/pages/${seg(id)}/publish`, { method: 'POST', ...opts }),
   sendForReview: (id, opts) =>
     call(`${ADM}/pages/${seg(id)}/review`, { method: 'POST', ...opts }),
+  withdraw: (id, opts) =>
+    call(`${ADM}/pages/${seg(id)}/withdraw`, { method: 'POST', ...opts }),
 
   sections: {
     list: (pageId, opts) =>
@@ -148,6 +154,12 @@ export const adminPages = {
       call(`${ADM}/pages/${seg(pageId)}/sections/${seg(sId)}`, opts),
     update: (pageId, sId, data, opts) =>
       call(`${ADM}/pages/${seg(pageId)}/sections/${seg(sId)}`, { method: 'PUT', body: data, ...opts }),
+    setVisibility: (pageId, sId, visible, opts) =>
+      call(`${ADM}/pages/${seg(pageId)}/sections/${seg(sId)}/visibility`, { method: 'PATCH', body: { is_visible: visible }, ...opts }),
+    reorder: (pageId, sectionIds, opts) =>
+      call(`${ADM}/pages/${seg(pageId)}/sections/reorder`, { method: 'PUT', body: { section_ids: sectionIds }, ...opts }),
+    discard: (pageId, sId, opts) =>
+      call(`${ADM}/pages/${seg(pageId)}/sections/${seg(sId)}/discard`, { method: 'POST', ...opts }),
     schema: {
       get: (pageId, sId, opts) =>
         call(`${ADM}/pages/${seg(pageId)}/sections/${seg(sId)}/schema`, opts),
@@ -160,6 +172,7 @@ export const adminPages = {
 export const adminFooter = {
   get: (opts) => call(`${ADM}/footer`, opts),
   update: (data, opts) => call(`${ADM}/footer`, { method: 'PUT', body: data, ...opts }),
+  publish: (opts) => call(`${ADM}/footer/publish`, { method: 'POST', ...opts }),
 };
 
 // ================================================================ admin — users
@@ -245,10 +258,24 @@ export const adminCharters = {
   create: (data, opts)     => call(`${ADM}/charters`, { method: 'POST', body: data, ...opts }),
   update: (id, data, opts) => call(`${ADM}/charters/${seg(id)}`, { method: 'PUT', body: data, ...opts }),
   remove: (id, opts)       => cmsApiFetch(`${ADM}/charters/${seg(id)}`, { method: 'DELETE', ...opts }),
-  uploadPdf: (id, file, opts) =>
-    call(`${ADM}/charters/${seg(id)}/pdf`, {
-      method: 'POST', body: toFormData({ pdf: file }), ...opts,
+  uploadSource: (id, file, opts) =>
+    call(`${ADM}/charters/${seg(id)}/source`, {
+      method: 'POST', body: toFormData({ file }), ...opts,
     }),
+  deleteSource: (id, opts) =>
+    cmsApiFetch(`${ADM}/charters/${seg(id)}/source`, { method: 'DELETE', ...opts }),
+  publish: (id, opts) =>
+    call(`${ADM}/charters/${seg(id)}/publish`, { method: 'POST', ...opts }),
+  unpublish: (id, opts) =>
+    call(`${ADM}/charters/${seg(id)}/unpublish`, { method: 'POST', ...opts }),
+  comingSoon: (id, opts) =>
+    call(`${ADM}/charters/${seg(id)}/coming-soon`, { method: 'POST', ...opts }),
+  import: (data, opts) =>
+    call(`${ADM}/charters/import`, { method: 'POST', body: data, ...opts }),
+  exportAll: (query, opts) =>
+    cmsApiFetch(`${ADM}/charters/export`, { query, as: 'blob', ...opts }),
+  csvTemplate: (opts) =>
+    cmsApiFetch(`${ADM}/charters/template`, { as: 'blob', ...opts }),
 };
 
 // ================================================================ admin — overview & activity

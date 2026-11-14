@@ -53,6 +53,67 @@ function PasswordStep() {
   );
 }
 
+function CodeStep({ onSwitch }) {
+  const [step, setStep] = useState(0);
+  const [em, setEm] = useState('');
+  const [code, setCode] = useState('');
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => { setTimeout(() => ref.current?.querySelector('input')?.focus(), 30); }, [step]);
+
+  const sendCode = async (e) => {
+    e.preventDefault();
+    const m = em.trim();
+    if (!m || !/^\S+@\S+\.\S+$/.test(m)) { setErr('Enter a valid work email address.'); return; }
+    if (busy) return;
+    setBusy(true); setErr('');
+    try { await cmsAuth.sendCode(m); setStep(1); }
+    catch (ex) { setErr(ex.message || 'Could not send the code. Please try again.'); }
+    finally { setBusy(false); }
+  };
+
+  const verifyCode = async (e) => {
+    e.preventDefault();
+    const c = code.trim();
+    if (!c) { setErr('Enter the 6-digit code from your email.'); return; }
+    if (busy) return;
+    setBusy(true); setErr('');
+    try { await cmsAuth.verifyCode(em, c); enter(em, false); }
+    catch (ex) { setErr(ex.message || 'Invalid or expired code. Check your email and try again.'); setBusy(false); }
+  };
+
+  if (step === 0) {
+    return (
+      <div className="l-in" ref={ref}>
+        <h1>Sign in with a code</h1><p className="lede">We'll email you a 6-digit code — no password needed.</p>
+        <form noValidate onSubmit={sendCode}>
+          <div className="lf"><label className="lbl" htmlFor="cem">Work email</label>
+            <div className="lin"><Icon n="mail" /><input className="inp" id="cem" type="email" autoComplete="email" inputMode="email" autoCapitalize="off" spellCheck="false" placeholder="name@otci.lagosstate.gov.ng" value={em} aria-describedby="cerr" aria-invalid={err ? 'true' : undefined} onChange={(e) => setEm(e.target.value)} /></div>
+          </div>
+          <p className="err" id="cerr" hidden={!err} role="alert">{err && <><Icon n="x" />{err}</>}</p>
+          <button className="btn btn-p l-go" type="submit" disabled={busy}>{busy ? <><span className="spin" />Sending code</> : <>Send code<Icon n="chev" /></>}</button>
+        </form>
+        <button type="button" className="l-skip" onClick={onSwitch}>Use password instead</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="l-in" ref={ref}>
+      <h1>Enter your code</h1><p className="lede">We sent a 6-digit code to <b>{em}</b>. It expires in 10 minutes.</p>
+      <form noValidate onSubmit={verifyCode}>
+        <div className="lf"><label className="lbl" htmlFor="ccode">6-digit code</label>
+          <div className="lin"><Icon n="lock" /><input className="inp" id="ccode" type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={8} placeholder="123456" value={code} aria-describedby="ccerr" aria-invalid={err ? 'true' : undefined} onChange={(e) => setCode(e.target.value)} /></div>
+        </div>
+        <p className="err" id="ccerr" hidden={!err} role="alert">{err && <><Icon n="x" />{err}</>}</p>
+        <button className="btn btn-p l-go" type="submit" disabled={busy}>{busy ? <><span className="spin" />Verifying</> : <>Sign in<Icon n="chev" /></>}</button>
+      </form>
+      <button type="button" className="l-skip" onClick={() => { setStep(0); setCode(''); setErr(''); }}>Use a different email</button>
+    </div>
+  );
+}
+
 const LINES = ['Taking Governance to Greater Heights', 'Your voice shapes better services in Lagos', 'Building a culture of creativity and innovation'];
 
 /** Typing headline, review flow and health counter on the right-hand art panel. */
@@ -81,6 +142,7 @@ function useLoginAnim(target) {
 export default function Login() {
   const health = Math.round(totals().health * 100);
   const [skipping, setSkipping] = useState(false);
+  const [codeMode, setCodeMode] = useState(false);
   const { typed, flow, hnum } = useLoginAnim(health);
   const bg = useRef(scene('sky', 11)).current;
   const flowIcon = (i) => (i < flow ? <Icon n="check" /> : i === flow ? <span className="spin" /> : <Icon n={['pen', 'send', 'globe'][i]} />);
@@ -91,10 +153,15 @@ export default function Login() {
         <div className="l-brand"><Mark /><div>OTCI Studio<small>Lagos State Office of Transformation, Creativity and Innovation</small></div></div>
         <div className="l-body"><div className="l-inner">
           <span className="l-eyebrow"><i />Content workspace for otci.lagosstate.gov.ng</span>
-          <div id="lstep"><PasswordStep /></div>
-          <button type="button" className="l-skip" disabled={skipping} onClick={() => { setSkipping(true); setTimeout(() => enter('demo@otci.lagosstate.gov.ng', true), 350); }}>
-            {skipping ? <><span className="spin" />Opening</> : <>Skip to the dashboard<Icon n="chev" /></>}
-          </button>
+          <div id="lstep">{codeMode ? <CodeStep onSwitch={() => setCodeMode(false)} /> : <PasswordStep />}</div>
+          {!codeMode && (
+            <>
+              <button type="button" className="l-skip" disabled={skipping} onClick={() => { setSkipping(true); setTimeout(() => enter('demo@otci.lagosstate.gov.ng', true), 350); }}>
+                {skipping ? <><span className="spin" />Opening</> : <>Skip to the dashboard<Icon n="chev" /></>}
+              </button>
+              <button type="button" className="l-skip" style={{ marginTop: 6 }} onClick={() => setCodeMode(true)}>Sign in with a one-time code instead</button>
+            </>
+          )}
         </div></div>
         <div className="l-foot"><span>© 2026 Lagos State OTCI · <a href={SITE_URL} target="_blank" rel="noopener" style={{ color: 'inherit' }}>Go to the website</a></span><span>Need access? Ask your Super Admin.</span></div>
       </section>

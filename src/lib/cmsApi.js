@@ -213,6 +213,7 @@ export function mapFolder(f, images) {
     title: f.title || '',
     desc: f.description || f.desc || '',
     visible: !!(f.is_visible ?? f.visible),
+    hasChanges: !!(f.has_unpublished_changes),
     cover: toMediaUrl(f.thumbnail_url || f.cover || ''),
     images: imgs.map((im) => ({
       id: im.id,

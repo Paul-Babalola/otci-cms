@@ -250,6 +250,7 @@ const ADAPTERS = {
             ...(v.articles && v.articles[i] || { tag: 'Events', img: '' }),
             title: n.title || '', date: fromISO(n.date), body: n.description || '',
             ...(n.image ? { img: mediaUrl(n.image) } : {}),
+            ...(n.article_link ? { link: n.article_link } : {}),
           }));
         }
       },
@@ -261,6 +262,7 @@ const ADAPTERS = {
           title: a.title, description: a.body || (prev[i] && prev[i].description) || '',
           ...(toISO(a.date) ? { date: toISO(a.date) } : {}),
           ...(isUrl(a.img) ? { image: a.img } : {}),
+          ...(a.link ? { article_link: a.link } : {}),
         }));
         return [{ id: s.id, content: { ...s.content, header: { ...(s.content && s.content.header || {}), title: v.title, description: v.desc }, items } }];
       },
@@ -353,10 +355,14 @@ const ADAPTERS = {
         const c = sect(api, 'feedback_form_config') && api.feedback_form_config.content; if (!c) return;
         if (c.title) v.title = c.title;
         if (c.description) v.desc = c.description;
+        if (Array.isArray(c.feedback_types) && c.feedback_types.length) v.feedbackTypes = c.feedback_types.join('\n');
       },
       push(v, api) {
         const s = sect(api, 'feedback_form_config'); if (!s) return [];
-        return [{ id: s.id, content: { ...s.content, title: v.title, description: v.desc } }];
+        const feedback_types = v.feedbackTypes
+          ? v.feedbackTypes.split('\n').map((t) => t.trim()).filter(Boolean)
+          : (s.content && s.content.feedback_types) || undefined;
+        return [{ id: s.id, content: { ...s.content, title: v.title, description: v.desc, ...(feedback_types ? { feedback_types } : {}) } }];
       },
     },
   },
@@ -516,7 +522,8 @@ export async function pageSyncSave(pid, title, v) {
   for (const p of puts) {
     const body = await cmsApiFetch(`/api/admin/pages/${slug}/sections/${p.id}`, { method: 'PUT', body: { content: p.content } });
     const saved = body && (body.section || body.data);
-    API[pid][saved && saved.type || Object.keys(API[pid]).find((t) => API[pid][t].id === p.id)] = { id: p.id, content: (saved && saved.content) || p.content };
+    const type = (saved && saved.type) || Object.keys(API[pid]).find((t) => API[pid][t].id === p.id);
+    if (type) API[pid][type] = { ...API[pid][type], id: p.id, content: (saved && saved.content) || p.content };
   }
   return { synced: true };
 }
@@ -528,7 +535,8 @@ export async function pageSyncVisibility(pid, title, visible) {
   if (!slug || !a || !API[pid]) return { synced: false };
   const puts = a.push({}, API[pid]);
   if (!puts.length) return { synced: false };
-  await cmsApiFetch(`/api/admin/pages/${slug}/sections/${puts[0].id}`, { method: 'PATCH', body: { is_visible: !!visible } });
+  await cmsApiFetch(`/api/admin/pages/${slug}/sections/${puts[0].id}/visibility`, { method: 'PATCH', body: { is_visible: !!visible } });
+  if (API[pid][a._type]) API[pid][a._type] = { ...API[pid][a._type], is_visible: !!visible };
   return { synced: true };
 }
 
@@ -537,4 +545,45 @@ export function pageSyncPublish(pid) {
   const slug = PAGE_SLUGS[pid];
   if (!slug) return Promise.resolve({ synced: false });
   return cmsApiFetch(`/api/admin/pages/${slug}/publish`, { method: 'POST' }).then(() => ({ synced: true }));
+}
+
+/** Send the page for review (department admins). */
+export function pageSyncReview(pid) {
+  const slug = PAGE_SLUGS[pid];
+  if (!slug) return Promise.resolve({ synced: false });
+  return cmsApiFetch(`/api/admin/pages/${slug}/review`, { method: 'POST' }).then(() => ({ synced: true }));
+}
+
+/** Withdraw the page from review. */
+export function pageSyncWithdraw(pid) {
+  const slug = PAGE_SLUGS[pid];
+  if (!slug) return Promise.resolve({ synced: false });
+  return cmsApiFetch(`/api/admin/pages/${slug}/withdraw`, { method: 'POST' }).then(() => ({ synced: true }));
+}
+
+/** Discard draft changes for a single section. */
+export async function pageSyncDiscard(pid, title) {
+  const slug = PAGE_SLUGS[pid];
+  const a = ADAPTERS[pid] && ADAPTERS[pid][title];
+  if (!slug || !a || !API[pid] || !a._type) return { synced: false };
+  const meta = API[pid][a._type];
+  if (!meta) return { synced: false };
+  const body = await cmsApiFetch(`/api/admin/pages/${slug}/sections/${meta.id}/discard`, { method: 'POST' });
+  const saved = body && (body.section || body.data);
+  if (saved && saved.content !== undefined) API[pid][a._type] = { ...meta, content: saved.content };
+  return { synced: true };
+}
+
+/** Sync the current section order to the backend after a local reorder. */
+export async function pageSyncReorder(pid, sections, titleOf) {
+  const slug = PAGE_SLUGS[pid];
+  const set = ADAPTERS[pid];
+  if (!slug || !set || !API[pid]) return { synced: false };
+  const ids = sections.map((s) => {
+    const a = set[titleOf(s)];
+    return (a && a._type && API[pid][a._type]) ? API[pid][a._type].id : null;
+  }).filter((id) => id != null);
+  if (!ids.length) return { synced: false };
+  await cmsApiFetch(`/api/admin/pages/${slug}/sections/reorder`, { method: 'PUT', body: { section_ids: ids } });
+  return { synced: true };
 }

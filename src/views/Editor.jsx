@@ -4,7 +4,7 @@ import { META, DEPTS } from '../data/content.js';
 import { Icon, Pill, Mini, Stepper, Mark } from '../components/ui.jsx';
 import { ago, clone, pick, readImg, RM } from '../lib/util.js';
 import { cmsApiFetch, uploadMedia } from '../lib/cmsApi.js';
-import { pageSynced, pageSyncLoad, pageSyncPull, pageSyncSave, pageSyncVisibility, pageSyncPublish, pageSyncSortOrder } from '../lib/pageSync.js';
+import { pageSynced, pageSyncLoad, pageSyncPull, pageSyncSave, pageSyncVisibility, pageSyncPublish, pageSyncSortOrder, pageSyncReview, pageSyncWithdraw, pageSyncDiscard, pageSyncReorder } from '../lib/pageSync.js';
 
 const getP = (o, p) => p.reduce((a, k) => a?.[k], o);
 const setP = (o, p, v) => { getP(o, p.slice(0, -1))[p[p.length - 1]] = v; };
@@ -57,8 +57,14 @@ export default function Editor({ pid }) {
     log('published', m.short || m.name, pid); persist(); setPublishing(false); setStepKey((k) => k + 1); commit();
     toast(`Published ${m.short || m.name}`, { icon: 'globe' });
   };
-  const review = () => { p.review = true; log('sent for review', m.short || m.name, pid); persist(); setStepKey((k) => k + 1); commit(); toast('Sent for review', { icon: 'send' }); };
-  const withdraw = () => { p.review = false; persist(); commit(); toast('Review withdrawn', { icon: 'undo' }); };
+  const review = () => {
+    p.review = true; log('sent for review', m.short || m.name, pid); persist(); setStepKey((k) => k + 1); commit(); toast('Sent for review', { icon: 'send' });
+    if (pageSynced(pid)) pageSyncReview(pid).catch((e) => toast(e.message || 'Could not send for review on the server.', { icon: 'x' }));
+  };
+  const withdraw = () => {
+    p.review = false; persist(); commit(); toast('Review withdrawn', { icon: 'undo' });
+    if (pageSynced(pid)) pageSyncWithdraw(pid).catch((e) => toast(e.message || 'Could not withdraw review on the server.', { icon: 'x' }));
+  };
   const pubBtn = <button className="btn btn-p" disabled={publishing} onClick={publish}>{publishing ? <><span className="spin" />Publishing</> : <><Icon n="globe" />Publish page</>}</button>;
 
   return (
@@ -108,6 +114,8 @@ function SectionList({ pid }) {
   const move = (i, j) => {
     if (j < 0 || j >= ss.length || i === j) return;
     const [s] = ss.splice(i, 1); ss.splice(j, 0, s); markDirty(s); setFlash(j);
+    const titleOf = (sec) => secSchema(pid, sec).title;
+    pageSyncReorder(pid, ss, titleOf).catch(() => {});
   };
   const toggle = (i) => {
     const s = ss[i]; s.visible = !s.visible; markDirty(s);
@@ -179,7 +187,10 @@ function SectionForm({ pid, i }) {
     }, 1500);
   };
   const close = () => { UI.lastClosed = i; UI.slideBack = true; UI.open = null; commit(); setTimeout(() => { UI.slideBack = false; }, 400); };
-  const discard = () => { s.v = clone(s.pub); s.dirty = false; persist(); log('discarded', s.title, pid); commit(); toast('Changes discarded', { icon: 'undo' }); };
+  const discard = () => {
+    s.v = clone(s.pub); s.dirty = false; persist(); log('discarded', s.title, pid); commit(); toast('Changes discarded', { icon: 'undo' });
+    pageSyncDiscard(pid, schema.title).catch(() => {});
+  };
 
   return (
     <div className="slide-in">

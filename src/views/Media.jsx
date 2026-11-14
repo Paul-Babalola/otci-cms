@@ -19,6 +19,7 @@ export async function newFolder() {
 
 export function Media() {
   const t = totals();
+  const [publishing, setPublishing] = useState(false);
   useEffect(() => {
     const load = (path, opts) => cmsApiFetch(path, opts).then((data) => {
       const rows = Array.isArray(data) ? data : (data?.folders ?? data?.data ?? []);
@@ -27,9 +28,32 @@ export function Media() {
     load('/api/gallery', { auth: false, query: { page: 1 } }).catch(() =>
       load('/api/admin/gallery', {}).catch(() => {}));
   }, []);
+
+  const publishGallery = async () => {
+    setPublishing(true);
+    try {
+      await cmsApiFetch('/api/admin/gallery/publish', { method: 'POST' });
+      S.gallery.forEach((f) => { f.hasChanges = false; });
+      commit();
+      toast('Gallery published successfully', { icon: 'globe' });
+    } catch (e) {
+      toast(e.message || 'Could not publish the gallery.', { icon: 'x' });
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  const hasUnpublished = S.gallery.some((f) => f.hasChanges);
+
   return (
     <>
-      <div className="h-row"><div><h1 className="h1">Media library</h1><p className="lede">Folders shown in the public gallery. The last uploaded image becomes a folder's cover.</p></div><button className="btn btn-p" data-a="newfolder" onClick={newFolder}><Icon n="plus" />New folder</button></div>
+      <div className="h-row">
+        <div><h1 className="h1">Media library</h1><p className="lede">Folders shown in the public gallery. The last uploaded image becomes a folder's cover.</p></div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {hasUnpublished && <button className="btn btn-g" onClick={publishGallery} disabled={publishing}>{publishing ? <><span className="spin" />Publishing…</> : <><Icon n="globe" />Publish gallery</>}</button>}
+          <button className="btn btn-p" data-a="newfolder" onClick={newFolder}><Icon n="plus" />New folder</button>
+        </div>
+      </div>
       <div className="mstats">
         <div className="card"><b className="num"><Count to={t.folders} /></b><span className="sub">Folders</span></div>
         <div className="card"><b className="num"><Count to={t.imgs} /></b><span className="sub">Images</span></div>
@@ -42,7 +66,12 @@ export function Media() {
           return (
             <button key={f.id} className="fcard" onClick={() => { UI.anim = true; go('media', { folder: f.id }); }}>
               {hasCover ? <div className="mos">{[0, 1, 2].map((k) => <div key={k} style={(im[k]?.src || (k === 0 && f.cover)) ? { backgroundImage: `url('${im[k]?.src || f.cover}')` } : undefined} />)}</div> : <div className="mos none"><Icon n="image" /></div>}
-              <div className="fb"><div><b>{f.title || 'Untitled folder'}</b><small className="num">{f.images.length} {f.images.length === 1 ? 'image' : 'images'}</small></div><Pill k={f.visible ? 'visible' : 'hidden'} /></div>
+              <div className="fb"><div><b>{f.title || 'Untitled folder'}</b><small className="num">{f.images.length} {f.images.length === 1 ? 'image' : 'images'}</small></div>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  {f.hasChanges && <span className="pill" style={{ background: 'var(--warn)', color: '#fff', fontSize: 11, padding: '2px 7px' }}>Unpublished</span>}
+                  <Pill k={f.visible ? 'visible' : 'hidden'} />
+                </div>
+              </div>
             </button>
           );
         })}
