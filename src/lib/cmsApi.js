@@ -204,6 +204,8 @@ export async function uploadMedia(file) {
 
 // ---------------------------------------------------------------- gallery helper (used by Media.jsx)
 
+const toMediaUrl = (u) => { const s = String(u || '').trim(); return !s ? '' : /^https?:\/\//i.test(s) ? s : CMS_BASE + '/' + s.replace(/^\/+/, ''); };
+
 export function mapFolder(f, images) {
   const imgs = images || f.images || [];
   return {
@@ -211,10 +213,11 @@ export function mapFolder(f, images) {
     title: f.title || '',
     desc: f.description || f.desc || '',
     visible: !!(f.is_visible ?? f.visible),
+    cover: toMediaUrl(f.thumbnail_url || f.cover || ''),
     images: imgs.map((im) => ({
       id: im.id,
       name: im.original_name || im.name || im.filename || '',
-      src: im.url || im.src || '',
+      src: toMediaUrl(im.url || im.src || ''),
     })),
   };
 }

@@ -20,10 +20,12 @@ export async function newFolder() {
 export function Media() {
   const t = totals();
   useEffect(() => {
-    cmsApiFetch('/api/admin/gallery').then((data) => {
+    const load = (path, opts) => cmsApiFetch(path, opts).then((data) => {
       const rows = Array.isArray(data) ? data : (data?.folders ?? data?.data ?? []);
       if (rows.length) { S.gallery = rows.map((f) => mapFolder(f)); commit(); }
-    }).catch(() => {});
+    });
+    load('/api/gallery', { auth: false, query: { page: 1 } }).catch(() =>
+      load('/api/admin/gallery', {}).catch(() => {}));
   }, []);
   return (
     <>
@@ -36,9 +38,10 @@ export function Media() {
       <div className="fgrid">
         {S.gallery.map((f) => {
           const im = [...f.images].reverse().slice(0, 3);
+          const hasCover = im.length || f.cover;
           return (
             <button key={f.id} className="fcard" onClick={() => { UI.anim = true; go('media', { folder: f.id }); }}>
-              {im.length ? <div className="mos">{[0, 1, 2].map((k) => <div key={k} style={im[k]?.src ? { backgroundImage: `url('${im[k].src}')` } : undefined} />)}</div> : <div className="mos none"><Icon n="image" /></div>}
+              {hasCover ? <div className="mos">{[0, 1, 2].map((k) => <div key={k} style={(im[k]?.src || (k === 0 && f.cover)) ? { backgroundImage: `url('${im[k]?.src || f.cover}')` } : undefined} />)}</div> : <div className="mos none"><Icon n="image" /></div>}
               <div className="fb"><div><b>{f.title || 'Untitled folder'}</b><small className="num">{f.images.length} {f.images.length === 1 ? 'image' : 'images'}</small></div><Pill k={f.visible ? 'visible' : 'hidden'} /></div>
             </button>
           );
@@ -58,12 +61,15 @@ export function Folder() {
   useEffect(() => { if (UI.focusTitle) { UI.focusTitle = false; setTimeout(() => titleRef.current?.focus(), 50); } }, []);
   useEffect(() => {
     if (!f || !Number.isFinite(f.id)) return;
-    cmsApiFetch(`/api/admin/gallery/${f.id}`).then((data) => {
+    const applyImgs = (data) => {
       const imgs = data?.images || [];
       if (!imgs.length) return;
-      f.images = imgs.map((im) => ({ id: im.id, name: im.original_name || im.name || '', src: im.url || im.src || '' }));
+      f.images = mapFolder(data?.folder || f, imgs).images;
       commit();
-    }).catch(() => {});
+    };
+    cmsApiFetch(`/api/gallery/${f.id}`, { auth: false })
+      .then(applyImgs)
+      .catch(() => cmsApiFetch(`/api/admin/gallery/${f.id}`).then(applyImgs).catch(() => {}));
   }, [f?.id]);
   if (!f) { UI.folder = null; return <Media />; }
 
