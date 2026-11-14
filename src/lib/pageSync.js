@@ -11,7 +11,7 @@
 import { cmsApiFetch, CMS_BASE } from './cmsApi.js';
 
 const PAGE_SLUGS = { home: 'home', about: 'about', bos: 'bos', ci: 'ci', reforms: 'reforms', msd: 'msd' };
-const API = {}; // pid -> { type: { id, content } }
+const API = {}; // pid -> { type: { id, content, sort_order, is_visible } }
 
 const isUrl = (u) => /^https?:\/\//i.test(u || '');
 const mediaUrl = (u) => { u = String(u || '').trim(); return !u ? '' : isUrl(u) ? u : CMS_BASE + '/' + u.replace(/^\/+/, ''); };
@@ -23,6 +23,7 @@ const sect = (api, type) => api[type] || null;
 
 /** Dept hero: headline, subtext, background image and CTA buttons all sync. */
 const heroDept = () => ({
+  _type: 'hero',
   pull(v, api) {
     const c = sect(api, 'hero') && api.hero.content; if (!c) return;
     if (c.headline) v.headline = c.headline;
@@ -41,6 +42,7 @@ const heroDept = () => ({
 
 /** 'In numbers' ↔ metrics_bar. Stats sync; section-level title stored as passthrough. */
 const metrics = () => ({
+  _type: 'metrics_bar',
   pull(v, api) {
     const c = sect(api, 'metrics_bar') && api.metrics_bar.content;
     if (!c) return;
@@ -57,6 +59,7 @@ const metrics = () => ({
 
 /** 'At a glance' ↔ program_overview (statement=title, body=description, img=right_image, cta_button_label=buttons[0].label). */
 const overview = () => ({
+  _type: 'program_overview',
   pull(v, api) {
     const c = sect(api, 'program_overview') && api.program_overview.content; if (!c) return;
     if (c.title) v.statement = c.title;
@@ -76,6 +79,7 @@ const overview = () => ({
 
 /** Card/item lists: local [{title,desc}] ↔ backend items under `type`.`listKey` with `descKey` text. Also syncs section title/eyebrow. */
 const cardList = (type, listKey, descKey, localKey = 'cards') => ({
+  _type: type,
   pull(v, api) {
     const c = sect(api, type) && api[type].content;
     if (!c) return;
@@ -102,6 +106,7 @@ const cardList = (type, listKey, descKey, localKey = 'cards') => ({
 
 /** 'Focus areas' ↔ focus_areas: title + items [{img,title}] ↔ backend [{image,description}]. */
 const focusAreas = () => ({
+  _type: 'focus_areas',
   pull(v, api) {
     const c = sect(api, 'focus_areas') && api.focus_areas.content;
     if (!c) return;
@@ -118,6 +123,7 @@ const focusAreas = () => ({
 
 /** 'Closing band' ↔ final_cta (headline, subtext, cta_buttons). */
 const band = () => ({
+  _type: 'final_cta',
   pull(v, api) {
     const c = sect(api, 'final_cta') && api.final_cta.content; if (!c) return;
     if (c.headline) v.headline = c.headline;
@@ -135,6 +141,7 @@ const band = () => ({
 
 /** 'Documents' ↔ a {title, description, <listKey>:[{title,description,file}]} section. */
 const docList = (type, listKey) => ({
+  _type: type,
   pull(v, api) {
     const c = sect(api, type) && api[type].content; if (!c) return;
     if (c.title) v.title = c.title;
@@ -154,6 +161,7 @@ const docList = (type, listKey) => ({
 const ADAPTERS = {
   home: {
     'Hero': {
+      _type: 'hero',
       pull(v, api) {
         const c = sect(api, 'hero') && api.hero.content; if (!c) return;
         if (c.headline) v.headline = c.headline;
@@ -169,6 +177,7 @@ const ADAPTERS = {
     },
     'Impact numbers': metrics(),
     'What we do': {
+      _type: 'what_we_do',
       pull(v, api) {
         const c = sect(api, 'what_we_do') && api.what_we_do.content; if (!c) return;
         if (c.header) {
@@ -189,6 +198,7 @@ const ADAPTERS = {
       },
     },
     'Transformation highlights': {
+      _type: 'transformation_highlights',
       pull(v, api) {
         const c = sect(api, 'transformation_highlights') && api.transformation_highlights.content; if (!c) return;
         if (c.header && c.header.title) v.title = c.header.title;
@@ -207,13 +217,15 @@ const ADAPTERS = {
       },
     },
     'Citizen voice band': {
+      _type: 'citizen_engagement_cta',
       pull(v, api) {
         const c = sect(api, 'citizen_engagement_cta') && api.citizen_engagement_cta.content; if (!c) return;
         if (c.headline) v.headline = c.headline;
         if (c.subtext) v.subtext = c.subtext;
-        if (c.cta_tag) {
-          if (Array.isArray(v.buttons) && v.buttons[0]) v.buttons[0].label = c.cta_tag;
-          else v.buttons = [{ label: c.cta_tag, link: 'feedback', type: 'Primary' }];
+        if (c.cta_tag || c.cta_link) {
+          if (!Array.isArray(v.buttons) || !v.buttons[0]) v.buttons = [{ label: '', link: '', type: 'Primary' }];
+          if (c.cta_tag) v.buttons[0].label = c.cta_tag;
+          if (c.cta_link) v.buttons[0].link = c.cta_link;
         }
         if (Array.isArray(c.cta_buttons) && c.cta_buttons.length) {
           v.buttons = c.cta_buttons.map((b) => ({ label: b.label || '', link: b.link || '', type: b.type === 'secondary' ? 'Secondary' : 'Primary' }));
@@ -223,10 +235,12 @@ const ADAPTERS = {
         const s = sect(api, 'citizen_engagement_cta'); if (!s) return [];
         const cta_buttons = (v.buttons || []).filter((b) => b.label).map((b) => ({ label: b.label, link: b.link || '', type: (b.type || 'Primary').toLowerCase() }));
         const label = v.buttons && v.buttons[0] && v.buttons[0].label;
-        return [{ id: s.id, content: { ...s.content, headline: v.headline, subtext: v.subtext, ...(label ? { cta_tag: label } : {}), ...(cta_buttons.length ? { cta_buttons } : {}) } }];
+        const link = v.buttons && v.buttons[0] && v.buttons[0].link;
+        return [{ id: s.id, content: { ...s.content, headline: v.headline, subtext: v.subtext, ...(label ? { cta_tag: label } : {}), ...(link ? { cta_link: link } : {}), ...(cta_buttons.length ? { cta_buttons } : {}) } }];
       },
     },
     'News & updates': {
+      _type: 'news_updates',
       pull(v, api) {
         const c = sect(api, 'news_updates') && api.news_updates.content; if (!c) return;
         if (c.header && c.header.title) v.title = c.header.title;
@@ -255,6 +269,7 @@ const ADAPTERS = {
 
   about: {
     'Who we are': {
+      _type: 'hero',
       pull(v, api) {
         const c = sect(api, 'hero') && api.hero.content; if (!c) return;
         if (c.eyebrow) v.eyebrow = c.eyebrow;
@@ -269,6 +284,7 @@ const ADAPTERS = {
       },
     },
     'Vision and mission': {
+      _type: 'vision_mission',
       pull(v, api) {
         const c = sect(api, 'vision_mission') && api.vision_mission.content; if (!c) return;
         if (c.vision) { if (c.vision.title) v.vTitle = c.vision.title; if (c.vision.description) v.vDesc = c.vision.description; }
@@ -281,6 +297,7 @@ const ADAPTERS = {
       },
     },
     'Leadership quote': {
+      _type: 'leadership_organization',
       pull(v, api) {
         const c = sect(api, 'leadership_organization') && api.leadership_organization.content; if (!c) return;
         if (c.title) v.quote = c.title;
@@ -301,6 +318,7 @@ const ADAPTERS = {
     'In numbers': metrics(),
     'Documents': docList('guides_policy_documents', 'documents'),
     'Feedback form': {
+      _type: 'feedback_form_config',
       pull(v, api) {
         const c = sect(api, 'feedback_form_config') && api.feedback_form_config.content; if (!c) return;
         if (c.title) v.title = c.title;
@@ -320,11 +338,11 @@ const ADAPTERS = {
     'Cards': cardList('innovation_in_numbers', 'items', 'description'),
     'Closing band': band(),
     'Images from Idea Day': {
+      _type: 'image_gallery',
       pull(v, api) {
         const c = sect(api, 'image_gallery') && api.image_gallery.content; if (!c) return;
         if (c.title) v.title = c.title;
         if (c.subtitle) v.desc = c.subtitle;
-        // Studio image items are { img, caption } objects.
         if (Array.isArray(c.images) && c.images.length) v.images = c.images.map((i) => ({ img: mediaUrl(i.image), caption: i.caption || '' }));
       },
       push(v, api) {
@@ -343,6 +361,7 @@ const ADAPTERS = {
     'Cards': cardList('build_stronger_institutions', 'items', 'content'),
     'Documents': docList('reform_reports', 'reports'),
     'Videos': {
+      _type: 'press_briefings',
       pull(v, api) {
         const c = sect(api, 'press_briefings') && api.press_briefings.content; if (!c) return;
         if (c.title) v.title = c.title;
@@ -395,15 +414,22 @@ export async function pageSyncLoad(pid) {
   }
   if (!secs) return null;
   const map = {};
-  secs.forEach((s) => { if (s && s.type) map[s.type] = { id: s.id, content: s.content || {} }; });
+  secs.forEach((s) => {
+    if (s && s.type) map[s.type] = {
+      id: s.id,
+      content: s.content || {},
+      sort_order: s.sort_order ?? null,
+      is_visible: s.is_visible ?? null,
+    };
+  });
   API[pid] = map;
   return map;
 }
 
 /**
  * Overwrite local form values with the backend's current content.
+ * Also seeds s.visible from is_visible and returns the number of sections hydrated.
  * Skips sections with unsaved local edits (dirty) so nothing is lost.
- * Returns the number of sections hydrated.
  */
 export function pageSyncPull(pid, localSections, titleOf, clone) {
   const set = ADAPTERS[pid];
@@ -414,9 +440,30 @@ export function pageSyncPull(pid, localSections, titleOf, clone) {
     if (!a || s.dirty) return;
     a.pull(s.v, API[pid]);
     s.pub = clone(s.v);
+    // Seed section visibility from the backend's is_visible flag.
+    if (a._type && API[pid][a._type] && API[pid][a._type].is_visible !== null) {
+      s.visible = API[pid][a._type].is_visible;
+    }
     n++;
   });
   return n;
+}
+
+/**
+ * Returns an array of sort_order values (or null) parallel to localSections,
+ * based on each section's backend sort_order. Sections with no backend mapping
+ * get null. Returns null if no sort_order data is available at all.
+ */
+export function pageSyncSortOrder(pid, localSections, titleOf) {
+  const set = ADAPTERS[pid];
+  if (!set || !API[pid]) return null;
+  const orders = localSections.map((s) => {
+    const a = set[titleOf(s)];
+    if (!a || !a._type) return null;
+    const meta = API[pid][a._type];
+    return (meta && meta.sort_order != null) ? meta.sort_order : null;
+  });
+  return orders.some((o) => o !== null) ? orders : null;
 }
 
 /**

@@ -4,7 +4,7 @@ import { META, DEPTS } from '../data/content.js';
 import { Icon, Pill, Mini, Stepper, Mark } from '../components/ui.jsx';
 import { ago, clone, pick, readImg, RM } from '../lib/util.js';
 import { cmsApiFetch, uploadMedia } from '../lib/cmsApi.js';
-import { pageSynced, pageSyncLoad, pageSyncPull, pageSyncSave, pageSyncVisibility, pageSyncPublish } from '../lib/pageSync.js';
+import { pageSynced, pageSyncLoad, pageSyncPull, pageSyncSave, pageSyncVisibility, pageSyncPublish, pageSyncSortOrder } from '../lib/pageSync.js';
 
 const getP = (o, p) => p.reduce((a, k) => a?.[k], o);
 const setP = (o, p, v) => { getP(o, p.slice(0, -1))[p[p.length - 1]] = v; };
@@ -26,7 +26,16 @@ export default function Editor({ pid }) {
     let on = true;
     pageSyncLoad(pid).then((map) => {
       if (!on || !map) return;
-      if (pageSyncPull(pid, p.sections, (s) => secSchema(pid, s).title, clone)) { persist(); commit(); }
+      const titleOf = (s) => secSchema(pid, s).title;
+      const changed = pageSyncPull(pid, p.sections, titleOf, clone);
+      // Re-order local sections to match the backend's sort_order.
+      const orders = pageSyncSortOrder(pid, p.sections, titleOf);
+      if (orders) {
+        const indexed = p.sections.map((s, i) => ({ s, o: orders[i] ?? Infinity }));
+        indexed.sort((a, b) => a.o - b.o);
+        p.sections.splice(0, p.sections.length, ...indexed.map((x) => x.s));
+      }
+      if (changed || orders) { persist(); commit(); }
     });
     return () => { on = false; };
   }, [pid]); // eslint-disable-line react-hooks/exhaustive-deps
