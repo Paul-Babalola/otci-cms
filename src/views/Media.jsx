@@ -7,7 +7,7 @@ import { cmsApiFetch, mapFolder } from '../lib/cmsApi.js';
 export async function newFolder() {
   try {
     const result = await cmsApiFetch('/api/admin/gallery', { method: 'POST', body: { title: '', description: '', is_visible: false } });
-    const f = mapFolder(result);
+    const f = mapFolder(result?.folder || result);
     S.gallery.push(f); log('created', 'New folder', ''); persist();
     UI.folder = f.id; UI.focusTitle = true; commit();
   } catch (_) {
@@ -21,8 +21,8 @@ export function Media() {
   const t = totals();
   useEffect(() => {
     cmsApiFetch('/api/admin/gallery').then((data) => {
-      const rows = Array.isArray(data) ? data : (data?.data ?? []);
-      if (rows.length) { S.gallery = rows.map(mapFolder); commit(); }
+      const rows = Array.isArray(data) ? data : (data?.folders ?? data?.data ?? []);
+      if (rows.length) { S.gallery = rows.map((f) => mapFolder(f)); commit(); }
     }).catch(() => {});
   }, []);
   return (
@@ -56,13 +56,22 @@ export function Folder() {
   const titleRef = useRef(null);
   const editTimer = useRef(null);
   useEffect(() => { if (UI.focusTitle) { UI.focusTitle = false; setTimeout(() => titleRef.current?.focus(), 50); } }, []);
+  useEffect(() => {
+    if (!f || !Number.isFinite(f.id)) return;
+    cmsApiFetch(`/api/admin/gallery/${f.id}`).then((data) => {
+      const imgs = data?.images || [];
+      if (!imgs.length) return;
+      f.images = imgs.map((im) => ({ id: im.id, name: im.original_name || im.name || '', src: im.url || im.src || '' }));
+      commit();
+    }).catch(() => {});
+  }, [f?.id]);
   if (!f) { UI.folder = null; return <Media />; }
 
   const add = (file) => {
     const fd = new FormData(); fd.append('image', file);
     cmsApiFetch(`/api/admin/gallery/${f.id}/images`, { method: 'POST', body: fd })
       .then((im) => {
-        f.images.push({ id: im.id, name: im.name || file.name, src: im.url }); setFresh(f.images.length - 1);
+        f.images.push({ id: im.id, name: im.original_name || im.name || file.name, src: im.url || im.src }); setFresh(f.images.length - 1);
         log('uploaded to', f.title || 'Untitled folder', ''); save();
         toast('Uploaded and set as cover', { icon: 'upload' });
       })

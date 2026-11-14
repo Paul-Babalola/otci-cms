@@ -204,15 +204,16 @@ export async function uploadMedia(file) {
 
 // ---------------------------------------------------------------- gallery helper (used by Media.jsx)
 
-export function mapFolder(f) {
+export function mapFolder(f, images) {
+  const imgs = images || f.images || [];
   return {
     id: f.id,
     title: f.title || '',
     desc: f.description || f.desc || '',
     visible: !!(f.is_visible ?? f.visible),
-    images: (f.images || []).map((im) => ({
+    images: imgs.map((im) => ({
       id: im.id,
-      name: im.name || im.filename || '',
+      name: im.original_name || im.name || im.filename || '',
       src: im.url || im.src || '',
     })),
   };

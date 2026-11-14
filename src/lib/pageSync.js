@@ -10,7 +10,7 @@
 
 import { cmsApiFetch, CMS_BASE } from './cmsApi.js';
 
-const PAGE_SLUGS = { home: 'home', about: 'about', bos: 'bos', ci: 'ci', reforms: 'reforms', msd: 'msd' };
+const PAGE_SLUGS = { home: 'home', about: 'about', bos: 'bos', ci: 'ci', reforms: 'reforms', msd: 'msd', nt: 'non-technical' };
 const API = {}; // pid -> { type: { id, content, sort_order, is_visible } }
 
 const isUrl = (u) => /^https?:\/\//i.test(u || '');
@@ -412,6 +412,11 @@ const ADAPTERS = {
     'Services': cardList('info_cards', 'cards', 'content'),
     'Focus areas': focusAreas(),
     'Cards': cardList('enabling_whole_otci', 'items', 'subtext'),
+    'Closing band': band(),
+  },
+
+  nt: {
+    'Hero': heroDept(),
     'Closing band': band(),
   },
 };
