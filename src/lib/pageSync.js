@@ -317,7 +317,35 @@ const ADAPTERS = {
 
   bos: {
     'Hero': heroDept(),
+    'At a glance': {
+      _type: 'service_charter_intro',
+      pull(v, api) {
+        const c = sect(api, 'service_charter_intro') && api.service_charter_intro.content; if (!c) return;
+        if (c.title) v.statement = c.title;
+        if (c.description) v.body = c.description;
+        if (c.background_image) v.img = mediaUrl(c.background_image);
+        if (Array.isArray(c.cta_buttons) && c.cta_buttons.length) {
+          v.buttons = c.cta_buttons.map((b) => ({ label: b.label || '', link: b.link || '', type: b.type === 'secondary' ? 'Secondary' : 'Primary' }));
+        }
+      },
+      push(v, api) {
+        const s = sect(api, 'service_charter_intro'); if (!s) return [];
+        const cta_buttons = (v.buttons || []).filter((b) => b.label).map((b) => ({ label: b.label, link: b.link || '', type: (b.type || 'Primary').toLowerCase() }));
+        return [{ id: s.id, content: { ...s.content, title: v.statement, ...(v.body ? { description: v.body } : {}), ...(isUrl(v.img) ? { background_image: v.img } : {}), ...(cta_buttons.length ? { cta_buttons } : {}) } }];
+      },
+    },
     'In numbers': metrics(),
+    'Services & standards': {
+      _type: 'services_standards_table',
+      pull(v, api) {
+        const c = sect(api, 'services_standards_table') && api.services_standards_table.content; if (!c) return;
+        if (c.title) v.title = c.title;
+      },
+      push(v, api) {
+        const s = sect(api, 'services_standards_table'); if (!s) return [];
+        return [{ id: s.id, content: { ...s.content, ...(v.title !== undefined ? { title: v.title } : {}) } }];
+      },
+    },
     'Documents': docList('guides_policy_documents', 'documents'),
     'Feedback form': {
       _type: 'feedback_form_config',
