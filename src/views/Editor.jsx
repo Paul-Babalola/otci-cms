@@ -3,7 +3,7 @@ import { S, UI, commit, persist, log, toast, go, comp, secState, secSchema, page
 import { META, DEPTS } from '../data/content.js';
 import { Icon, Pill, Mini, Stepper, Mark } from '../components/ui.jsx';
 import { ago, clone, pick, readImg, RM } from '../lib/util.js';
-import { cmsApiFetch, uploadMedia } from '../lib/cmsApi.js';
+import { cmsApiFetch, uploadMedia, CMS_BASE } from '../lib/cmsApi.js';
 import { pageSynced, pageSyncLoad, pageSyncPull, pageSyncSave, pageSyncVisibility, pageSyncPublish, pageSyncSortOrder, pageSyncReview, pageSyncWithdraw, pageSyncDiscard, pageSyncReorder } from '../lib/pageSync.js';
 
 const getP = (o, p) => p.reduce((a, k) => a?.[k], o);
@@ -52,10 +52,20 @@ export default function Editor({ pid }) {
     } else {
       try { await cmsApiFetch(`/api/admin/pages/${pid}/publish`, { method: 'POST' }); } catch (_) {}
     }
-    p.sections.forEach((s) => { s.dirty = false; s.pub = clone(s.v); });
+    const unsaved = p.sections.filter((s) => s._serverSaved === false);
+    p.sections.forEach((s) => {
+      // Keep dirty=true for sections where the last server save failed — their
+      // changes were never persisted, so pageSyncPull must not overwrite them on refresh.
+      if (s._serverSaved !== false) { s.dirty = false; s.pub = clone(s.v); }
+      s._serverSaved = undefined;
+    });
     p.review = false; p.publishedAt = Date.now();
     log('published', m.short || m.name, pid); persist(); setPublishing(false); setStepKey((k) => k + 1); commit();
-    toast(`Published ${m.short || m.name}`, { icon: 'globe' });
+    if (unsaved.length) {
+      toast(`Published — ${unsaved.length} section${unsaved.length > 1 ? 's' : ''} couldn't reach the server and remain as drafts`, { icon: 'warn' });
+    } else {
+      toast(`Published ${m.short || m.name}`, { icon: 'globe' });
+    }
   };
   const review = () => {
     p.review = true; log('sent for review', m.short || m.name, pid); persist(); setStepKey((k) => k + 1); commit(); toast('Sent for review', { icon: 'send' });
@@ -182,8 +192,13 @@ function SectionForm({ pid, i }) {
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       pageSyncSave(pid, schema.title, s.v)
-        .then(({ synced }) => { if (synced) toast('Draft saved to the server', { icon: 'check' }); })
-        .catch((e) => toast(`Not saved to the server — ${e.message || 'request failed'}. ${e.status === 401 ? 'Sign in and try again.' : ''}`, { icon: 'x' }));
+        .then(({ synced }) => {
+          if (synced) { s._serverSaved = true; toast('Draft saved to the server', { icon: 'check' }); }
+        })
+        .catch((e) => {
+          s._serverSaved = false;
+          toast(`Not saved to the server — ${e.message || 'request failed'}. ${e.status === 401 ? 'Sign in and try again.' : ''}`, { icon: 'x' });
+        });
     }, 1500);
   };
   const close = () => { UI.lastClosed = i; UI.slideBack = true; UI.open = null; commit(); setTimeout(() => { UI.slideBack = false; }, 400); };
@@ -281,7 +296,9 @@ function Control({ f, vals, path, s, onChange }) {
     setUploading(true);
     try {
       const url = await uploadMedia(file);
-      set(url);
+      // Normalize to absolute URL so isUrl() checks in pageSync push() pass correctly
+      const abs = /^https?:\/\//i.test(url) ? url : CMS_BASE + '/' + url.replace(/^\/+/, '');
+      set(abs);
     } catch (e) {
       toast(`Upload failed — ${e.message || 'try again'}`, { icon: 'x' });
     } finally {
