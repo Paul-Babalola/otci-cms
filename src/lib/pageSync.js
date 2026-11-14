@@ -272,7 +272,9 @@ const ADAPTERS = {
       _type: 'hero',
       pull(v, api) {
         const c = sect(api, 'hero') && api.hero.content; if (!c) return;
-        if (c.eyebrow) v.eyebrow = c.eyebrow;
+        // API uses 'title' for the eyebrow label; fall back to 'eyebrow' if present.
+        if (c.title) v.eyebrow = c.title;
+        else if (c.eyebrow) v.eyebrow = c.eyebrow;
         if (c.description) v.statement = c.description;
         if (Array.isArray(c.features) && c.features.length) v.pillars = c.features.map((f) => ({ title: f.label || '', desc: f.subtext || '' }));
       },
@@ -280,7 +282,7 @@ const ADAPTERS = {
         const s = sect(api, 'hero'); if (!s) return [];
         const prev = Array.isArray(s.content && s.content.features) ? s.content.features : [];
         const features = (v.pillars || []).map((k, i) => ({ ...(prev[i] || {}), label: k.title, subtext: k.desc }));
-        return [{ id: s.id, content: { ...s.content, ...(v.eyebrow !== undefined ? { eyebrow: v.eyebrow } : {}), description: v.statement, features } }];
+        return [{ id: s.id, content: { ...s.content, ...(v.eyebrow !== undefined ? { title: v.eyebrow } : {}), description: v.statement, features } }];
       },
     },
     'Vision and mission': {
