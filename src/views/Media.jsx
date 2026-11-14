@@ -23,7 +23,7 @@ export function Media() {
   useEffect(() => {
     const load = (path, opts) => cmsApiFetch(path, opts).then((data) => {
       const rows = Array.isArray(data) ? data : (data?.folders ?? data?.data ?? []);
-      if (rows.length) { S.gallery = rows.map((f) => mapFolder(f)); commit(); }
+      if (rows.length) { S.gallery = rows.map((f) => mapFolder(f)); save(); }
     });
     load('/api/gallery', { auth: false, query: { page: 1 } }).catch(() =>
       load('/api/admin/gallery', {}).catch(() => {}));
@@ -90,7 +90,8 @@ export function Folder() {
   useEffect(() => { if (UI.focusTitle) { UI.focusTitle = false; setTimeout(() => titleRef.current?.focus(), 50); } }, []);
   useEffect(() => {
     if (!f || !Number.isFinite(f.id)) return;
-    const applyImgs = (data) => {
+    const applyImgs = (raw) => {
+      const data = raw?.data || raw;
       const imgs = data?.images || [];
       if (!imgs.length) return;
       f.images = mapFolder(data?.folder || f, imgs).images;

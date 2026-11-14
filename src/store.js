@@ -137,7 +137,8 @@ export function validRoutes() {
 
 export function go(r, opts = {}) {
   if (!S.authed) r = 'login';
-  if (r !== UI.route) { UI.open = null; UI.folder = opts.folder ?? null; UI.tab = 'sections'; UI.anim = true; }
+  if (r !== UI.route) { UI.open = null; UI.tab = 'sections'; UI.anim = true; }
+  if ('folder' in opts) UI.folder = opts.folder ?? null;
   UI.route = r;
   UI.nav = false;
   try { history.replaceState(null, '', r === 'overview' ? location.pathname : '#' + r); } catch (_) { /* sandboxed */ }
