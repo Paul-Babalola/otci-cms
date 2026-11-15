@@ -28,6 +28,7 @@ const heroDept = () => ({
     const c = sect(api, 'hero') && api.hero.content; if (!c) return;
     if (c.headline) v.headline = c.headline;
     if (c.subtext) v.subtext = c.subtext;
+    if (c.eyebrow || c.department_name) v.eyebrow = c.eyebrow || c.department_name;
     if (c.background_image) v.bg = mediaUrl(c.background_image);
     if (Array.isArray(c.cta_buttons) && c.cta_buttons.length) {
       v.buttons = c.cta_buttons.map((b) => ({ label: b.label || '', link: b.link || '', type: b.type === 'secondary' ? 'Secondary' : 'Primary' }));
@@ -36,7 +37,7 @@ const heroDept = () => ({
   push(v, api) {
     const s = sect(api, 'hero'); if (!s) return [];
     const cta_buttons = (v.buttons || []).filter((b) => b.label).map((b) => ({ label: b.label, link: b.link || '', type: (b.type || 'Primary').toLowerCase() }));
-    return [{ id: s.id, content: { ...s.content, headline: v.headline, subtext: v.subtext, ...(isUrl(v.bg) ? { background_image: v.bg } : {}), ...(cta_buttons.length ? { cta_buttons } : {}) } }];
+    return [{ id: s.id, content: { ...s.content, headline: v.headline, subtext: v.subtext, ...(v.eyebrow !== undefined ? { eyebrow: v.eyebrow } : {}), ...(isUrl(v.bg) ? { background_image: v.bg } : {}), ...(cta_buttons.length ? { cta_buttons } : {}) } }];
   },
 });
 
@@ -47,13 +48,18 @@ const metrics = () => ({
     const c = sect(api, 'metrics_bar') && api.metrics_bar.content;
     if (!c) return;
     if (c.title) v.title = c.title;
+    if (c.description) v.desc = c.description;
     if (Array.isArray(c.stats) && c.stats.length) v.stats = c.stats.map((s) => ({ value: s.value || '', label: s.title || s.label || '' }));
+    if (Array.isArray(c.cta_buttons) && c.cta_buttons.length) {
+      v.buttons = c.cta_buttons.map((b) => ({ label: b.label || '', link: b.link || '', type: b.type === 'secondary' ? 'Secondary' : 'Primary' }));
+    }
   },
   push(v, api) {
     const s = sect(api, 'metrics_bar'); if (!s) return [];
     const prev = Array.isArray(s.content && s.content.stats) ? s.content.stats : [];
     const stats = (v.stats || []).map((k, i) => ({ ...(prev[i] || {}), value: k.value, title: k.label, label: k.label }));
-    return [{ id: s.id, content: { ...s.content, ...(v.title !== undefined ? { title: v.title } : {}), stats } }];
+    const cta_buttons = (v.buttons || []).filter((b) => b.label).map((b) => ({ label: b.label, link: b.link || '', type: (b.type || 'Primary').toLowerCase() }));
+    return [{ id: s.id, content: { ...s.content, ...(v.title !== undefined ? { title: v.title } : {}), ...(v.desc !== undefined ? { description: v.desc } : {}), stats, ...(cta_buttons.length ? { cta_buttons } : {}) } }];
   },
 });
 
@@ -197,6 +203,42 @@ const ADAPTERS = {
         return [{ id: s.id, content: { ...s.content, header: { ...(s.content && s.content.header || {}), title: v.title, description: v.desc }, departments, ...(cta_buttons.length ? { cta_buttons } : {}) } }];
       },
     },
+    'How we work': {
+      _type: 'how_we_work',
+      pull(v, api) {
+        const c = sect(api, 'how_we_work') && api.how_we_work.content; if (!c) return;
+        if (Array.isArray(c.steps) && c.steps.length) {
+          v.steps = c.steps.map((s) => ({
+            verb: s.verb || '', dept: s.department || s.dept || '',
+            desc: s.description || s.desc || '', value: s.stat_value || s.value || '',
+            label: s.stat_label || s.label || '', link: s.link || '',
+          }));
+        }
+      },
+      push(v, api) {
+        const s = sect(api, 'how_we_work'); if (!s) return [];
+        const prev = Array.isArray(s.content && s.content.steps) ? s.content.steps : [];
+        const steps = (v.steps || []).map((k, i) => ({ ...(prev[i] || {}), verb: k.verb, department: k.dept, description: k.desc, stat_value: k.value, stat_label: k.label, link: k.link || '' }));
+        return [{ id: s.id, content: { ...s.content, ...(steps.length ? { steps } : {}) } }];
+      },
+    },
+    'Who it is for': {
+      _type: 'audiences',
+      pull(v, api) {
+        const c = sect(api, 'audiences') && api.audiences.content; if (!c) return;
+        if (c.title) v.title = c.title;
+        if (c.description) v.desc = c.description;
+        if (Array.isArray(c.cards) && c.cards.length) {
+          v.cards = c.cards.map((k) => ({ tag: k.audience || k.tag || '', title: k.message || k.title || '', cta: k.cta_label || k.cta || '' }));
+        }
+      },
+      push(v, api) {
+        const s = sect(api, 'audiences'); if (!s) return [];
+        const prev = Array.isArray(s.content && s.content.cards) ? s.content.cards : [];
+        const cards = (v.cards || []).map((k, i) => ({ ...(prev[i] || {}), audience: k.tag, message: k.title, cta_label: k.cta }));
+        return [{ id: s.id, content: { ...s.content, title: v.title, description: v.desc, ...(cards.length ? { cards } : {}) } }];
+      },
+    },
     'Transformation highlights': {
       _type: 'transformation_highlights',
       pull(v, api) {
@@ -207,12 +249,15 @@ const ADAPTERS = {
           if (!v.items || !v.items[i]) return;
           if (h.title) v.items[i].title = h.title;
           if (h.image) v.items[i].img = mediaUrl(h.image);
+          if (h.department) v.items[i].dept = h.department;
+          if (h.period || h.date) v.items[i].date = h.period || h.date;
+          if (h.summary) v.items[i].summary = h.summary;
         });
       },
       push(v, api) {
         const s = sect(api, 'transformation_highlights'); if (!s) return [];
         const prev = Array.isArray(s.content && s.content.highlights) ? s.content.highlights : [];
-        const highlights = (v.items || []).map((it, i) => ({ ...(prev[i] || {}), title: it.title, ...(isUrl(it.img) ? { image: it.img } : {}) }));
+        const highlights = (v.items || []).map((it, i) => ({ ...(prev[i] || {}), title: it.title, ...(isUrl(it.img) ? { image: it.img } : {}), ...(it.dept ? { department: it.dept } : {}), ...(it.date ? { period: it.date } : {}), ...(it.summary ? { summary: it.summary } : {}) }));
         return [{ id: s.id, content: { ...s.content, header: { ...(s.content && s.content.header || {}), title: v.title, description: v.desc }, highlights } }];
       },
     },
@@ -249,6 +294,7 @@ const ADAPTERS = {
           v.articles = c.items.map((n, i) => ({
             ...(v.articles && v.articles[i] || { tag: 'Events', img: '' }),
             title: n.title || '', date: fromISO(n.date), body: n.description || '',
+            ...(n.tag ? { tag: n.tag } : {}),
             ...(n.image ? { img: mediaUrl(n.image) } : {}),
             ...(n.article_link ? { link: n.article_link } : {}),
           }));
@@ -261,6 +307,7 @@ const ADAPTERS = {
           ...(prev[i] || {}),
           title: a.title, description: a.body || (prev[i] && prev[i].description) || '',
           ...(toISO(a.date) ? { date: toISO(a.date) } : {}),
+          ...(a.tag ? { tag: a.tag } : {}),
           ...(isUrl(a.img) ? { image: a.img } : {}),
           ...(a.link ? { article_link: a.link } : {}),
         }));
@@ -270,6 +317,24 @@ const ADAPTERS = {
   },
 
   about: {
+    'Hero': {
+      _type: 'about_hero',
+      pull(v, api) {
+        const c = sect(api, 'about_hero') && api.about_hero.content; if (!c) return;
+        if (c.eyebrow) v.eyebrow = c.eyebrow;
+        if (c.headline) v.headline = c.headline;
+        if (c.subtext) v.subtext = c.subtext;
+        if (Array.isArray(c.images) && c.images.length) {
+          v.images = c.images.map((i) => ({ img: mediaUrl(i.url || i.image || ''), caption: i.alt || i.caption || '' }));
+        }
+      },
+      push(v, api) {
+        const s = sect(api, 'about_hero'); if (!s) return [];
+        const prev = Array.isArray(s.content && s.content.images) ? s.content.images : [];
+        const images = (v.images || []).filter((k) => isUrl(k.img)).map((k, i) => ({ ...(prev[i] || {}), url: k.img, alt: k.caption || '' }));
+        return [{ id: s.id, content: { ...s.content, eyebrow: v.eyebrow, headline: v.headline, subtext: v.subtext, ...(images.length ? { images } : {}) } }];
+      },
+    },
     'Who we are': {
       _type: 'hero',
       pull(v, api) {
@@ -315,6 +380,23 @@ const ADAPTERS = {
         return [{ id: s.id, content: { ...s.content, title: v.quote, body: v.body, leader_name: v.by, ...(v.role !== undefined ? { leader_role: v.role } : {}), ...(isUrl(v.img) ? { image: v.img } : {}) } }];
       },
     },
+    'Departments': {
+      _type: 'departments',
+      pull(v, api) {
+        const c = sect(api, 'departments') && api.departments.content; if (!c) return;
+        if (c.eyebrow) v.eyebrow = c.eyebrow;
+        if (c.title) v.title = c.title;
+        if (Array.isArray(c.cards) && c.cards.length) {
+          v.cards = c.cards.map((k) => ({ img: mediaUrl(k.image || ''), tag: k.short_name || k.tag || '', link: k.link || '', title: k.name || k.title || '', desc: k.description || k.desc || '' }));
+        }
+      },
+      push(v, api) {
+        const s = sect(api, 'departments'); if (!s) return [];
+        const prev = Array.isArray(s.content && s.content.cards) ? s.content.cards : [];
+        const cards = (v.cards || []).map((k, i) => ({ ...(prev[i] || {}), short_name: k.tag, name: k.title, description: k.desc, link: k.link || '', ...(isUrl(k.img) ? { image: k.img } : {}) }));
+        return [{ id: s.id, content: { ...s.content, eyebrow: v.eyebrow, title: v.title, ...(cards.length ? { cards } : {}) } }];
+      },
+    },
   },
 
   bos: {
@@ -337,6 +419,81 @@ const ADAPTERS = {
       },
     },
     'In numbers': metrics(),
+    'Cards': {
+      _type: 'what_we_do',
+      pull(v, api) {
+        const c = sect(api, 'what_we_do') && api.what_we_do.content; if (!c) return;
+        if (c.eyebrow) v.eyebrow = c.eyebrow;
+        if (c.title) v.title = c.title;
+        if (Array.isArray(c.cards) && c.cards.length) {
+          v.cards = c.cards.map((k) => ({ title: k.title || '', desc: k.description || '' }));
+        }
+      },
+      push(v, api) {
+        const s = sect(api, 'what_we_do'); if (!s) return [];
+        const prev = Array.isArray(s.content && s.content.cards) ? s.content.cards : [];
+        const cards = (v.cards || []).map((k, i) => ({ ...(prev[i] || {}), title: k.title, description: k.desc }));
+        return [{ id: s.id, content: { ...s.content, ...(v.eyebrow !== undefined ? { eyebrow: v.eyebrow } : {}), ...(v.title !== undefined ? { title: v.title } : {}), ...(cards.length ? { cards } : {}) } }];
+      },
+    },
+    'Grievance redress': {
+      _type: 'grievance_redress',
+      pull(v, api) {
+        const c = sect(api, 'grievance_redress') && api.grievance_redress.content; if (!c) return;
+        if (c.eyebrow) v.eyebrow = c.eyebrow;
+        if (c.title) v.title = c.title;
+        if (c.description) v.desc = c.description;
+        if (Array.isArray(c.cta_buttons) && c.cta_buttons.length) {
+          v.buttons = c.cta_buttons.map((b) => ({ label: b.label || '', link: b.link || '', type: b.type === 'secondary' ? 'Secondary' : 'Primary' }));
+        }
+      },
+      push(v, api) {
+        const s = sect(api, 'grievance_redress'); if (!s) return [];
+        const cta_buttons = (v.buttons || []).filter((b) => b.label).map((b) => ({ label: b.label, link: b.link || '', type: (b.type || 'Primary').toLowerCase() }));
+        return [{ id: s.id, content: { ...s.content, eyebrow: v.eyebrow, title: v.title, description: v.desc, ...(cta_buttons.length ? { cta_buttons } : {}) } }];
+      },
+    },
+    'Our promise': {
+      _type: 'service_promise',
+      pull(v, api) {
+        const c = sect(api, 'service_promise') && api.service_promise.content; if (!c) return;
+        if (c.quote || c.title) v.quote = c.quote || c.title;
+        if (c.image) v.img = mediaUrl(c.image);
+      },
+      push(v, api) {
+        const s = sect(api, 'service_promise'); if (!s) return [];
+        return [{ id: s.id, content: { ...s.content, quote: v.quote, ...(isUrl(v.img) ? { image: v.img } : {}) } }];
+      },
+    },
+    'Find an MDA (feedback)': {
+      _type: 'feedback_intro',
+      pull(v, api) {
+        const c = sect(api, 'feedback_intro') && api.feedback_intro.content; if (!c) return;
+        if (c.eyebrow) v.eyebrow = c.eyebrow;
+        if (c.title) v.title = c.title;
+        if (c.description) v.desc = c.description;
+      },
+      push(v, api) {
+        const s = sect(api, 'feedback_intro'); if (!s) return [];
+        return [{ id: s.id, content: { ...s.content, eyebrow: v.eyebrow, title: v.title, description: v.desc } }];
+      },
+    },
+    'Quarterly service performance': {
+      _type: 'quarterly_performance',
+      pull(v, api) {
+        const c = sect(api, 'quarterly_performance') && api.quarterly_performance.content; if (!c) return;
+        if (c.eyebrow) v.eyebrow = c.eyebrow;
+        if (c.title) v.title = c.title;
+        if (c.description) v.desc = c.description;
+        if (c.period) v.period = c.period;
+        if (c.source) v.source = c.source;
+        if (c.report_url || c.report) v.report = mediaUrl(c.report_url || c.report);
+      },
+      push(v, api) {
+        const s = sect(api, 'quarterly_performance'); if (!s) return [];
+        return [{ id: s.id, content: { ...s.content, ...(v.eyebrow !== undefined ? { eyebrow: v.eyebrow } : {}), ...(v.title !== undefined ? { title: v.title } : {}), ...(v.desc !== undefined ? { description: v.desc } : {}), ...(v.period !== undefined ? { period: v.period } : {}), ...(v.source !== undefined ? { source: v.source } : {}), ...(isUrl(v.report) ? { report_url: v.report } : {}) } }];
+      },
+    },
     'Services & standards': {
       _type: 'services_standards_table',
       pull(v, api) {
@@ -402,11 +559,14 @@ const ADAPTERS = {
         const c = sect(api, 'press_briefings') && api.press_briefings.content; if (!c) return;
         if (c.title) v.title = c.title;
         if (c.description) v.desc = c.description;
+        if (Array.isArray(c.items) && c.items.length) {
+          v.videos = c.items.map((it) => ({ title: it.title || '', url: it.link || it.url || '', thumbnail: it.thumbnail ? mediaUrl(it.thumbnail) : '' }));
+        }
       },
       push(v, api) {
         const s = sect(api, 'press_briefings'); if (!s) return [];
         const prev = Array.isArray(s.content && s.content.items) ? s.content.items : [];
-        const items = (v.videos || []).map((k, i) => ({ ...(prev[i] || {}), title: k.title, link: k.url }));
+        const items = (v.videos || []).map((k, i) => ({ ...(prev[i] || {}), title: k.title, link: k.url, ...(isUrl(k.thumbnail) ? { thumbnail: k.thumbnail } : {}) }));
         return [{ id: s.id, content: { ...s.content, title: v.title, description: v.desc, ...(items.length ? { items } : {}) } }];
       },
     },
@@ -423,6 +583,40 @@ const ADAPTERS = {
 
   nt: {
     'Hero': heroDept(),
+    'Department index': {
+      _type: 'nt_intro',
+      pull(v, api) {
+        const c = sect(api, 'nt_intro') && api.nt_intro.content; if (!c) return;
+        if (c.statement) v.statement = c.statement;
+      },
+      push(v, api) {
+        const s = sect(api, 'nt_intro'); if (!s) return [];
+        return [{ id: s.id, content: { ...s.content, statement: v.statement } }];
+      },
+    },
+    'Inside each department': {
+      _type: 'nt_departments',
+      pull(v, api) {
+        const c = sect(api, 'nt_departments') && api.nt_departments.content; if (!c) return;
+        if (c.title) v.title = c.title;
+        if (c.description) v.desc = c.description;
+        if (Array.isArray(c.departments) && c.departments.length) {
+          v.depts = c.departments.map((d) => ({
+            name: d.name || '', purpose: d.purpose || '',
+            fns: Array.isArray(d.functions) ? d.functions.join('\n') : (d.fns || ''),
+          }));
+        }
+      },
+      push(v, api) {
+        const s = sect(api, 'nt_departments'); if (!s) return [];
+        const prev = Array.isArray(s.content && s.content.departments) ? s.content.departments : [];
+        const departments = (v.depts || []).map((k, i) => ({
+          ...(prev[i] || {}), name: k.name, purpose: k.purpose,
+          functions: (k.fns || '').split('\n').map((f) => f.trim()).filter(Boolean),
+        }));
+        return [{ id: s.id, content: { ...s.content, title: v.title, description: v.desc, ...(departments.length ? { departments } : {}) } }];
+      },
+    },
     'Closing band': band(),
   },
 };
