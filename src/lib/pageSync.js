@@ -30,6 +30,8 @@ const heroDept = () => ({
     if (c.subtext) v.subtext = c.subtext;
     if (c.eyebrow || c.department_name) v.eyebrow = c.eyebrow || c.department_name;
     if (c.background_image) v.bg = mediaUrl(c.background_image);
+    if (c.chip_value || c.chipValue) v.chipValue = c.chip_value || c.chipValue;
+    if (c.chip_label || c.chipLabel) v.chipLabel = c.chip_label || c.chipLabel;
     if (Array.isArray(c.cta_buttons) && c.cta_buttons.length) {
       v.buttons = c.cta_buttons.map((b) => ({ label: b.label || '', link: b.link || '', type: b.type === 'secondary' ? 'Secondary' : 'Primary' }));
     }
@@ -37,7 +39,7 @@ const heroDept = () => ({
   push(v, api) {
     const s = sect(api, 'hero'); if (!s) return [];
     const cta_buttons = (v.buttons || []).filter((b) => b.label).map((b) => ({ label: b.label, link: b.link || '', type: (b.type || 'Primary').toLowerCase() }));
-    return [{ id: s.id, content: { ...s.content, headline: v.headline, subtext: v.subtext, ...(v.eyebrow !== undefined ? { eyebrow: v.eyebrow } : {}), ...(isUrl(v.bg) ? { background_image: v.bg } : {}), ...(cta_buttons.length ? { cta_buttons } : {}) } }];
+    return [{ id: s.id, content: { ...s.content, headline: v.headline, subtext: v.subtext, ...(v.eyebrow !== undefined ? { eyebrow: v.eyebrow } : {}), ...(isUrl(v.bg) ? { background_image: v.bg } : {}), ...(v.chipValue !== undefined ? { chip_value: v.chipValue } : {}), ...(v.chipLabel !== undefined ? { chip_label: v.chipLabel } : {}), ...(cta_buttons.length ? { cta_buttons } : {}) } }];
   },
 });
 
@@ -513,8 +515,8 @@ const ADAPTERS = {
       _type: 'feedback_form_config',
       pull(v, api) {
         const c = sect(api, 'feedback_form_config') && api.feedback_form_config.content; if (!c) return;
-        if (c.title) v.title = c.title;
-        if (c.description) v.desc = c.description;
+        if (c.title) v.headline = c.title;
+        if (c.description || c.subtitle) v.subtext = c.description || c.subtitle;
         if (Array.isArray(c.feedback_types) && c.feedback_types.length) v.feedbackTypes = c.feedback_types.join('\n');
       },
       push(v, api) {
@@ -522,7 +524,7 @@ const ADAPTERS = {
         const feedback_types = v.feedbackTypes
           ? v.feedbackTypes.split('\n').map((t) => t.trim()).filter(Boolean)
           : (s.content && s.content.feedback_types) || undefined;
-        return [{ id: s.id, content: { ...s.content, title: v.title, description: v.desc, ...(feedback_types ? { feedback_types } : {}) } }];
+        return [{ id: s.id, content: { ...s.content, title: v.headline, description: v.subtext, ...(feedback_types ? { feedback_types } : {}) } }];
       },
     },
   },
