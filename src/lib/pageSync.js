@@ -405,6 +405,7 @@ const ADAPTERS = {
       _type: 'service_charter_intro',
       pull(v, api) {
         const c = sect(api, 'service_charter_intro') && api.service_charter_intro.content; if (!c) return;
+        if (c.eyebrow || c.department_name) v.eyebrow = c.eyebrow || c.department_name;
         if (c.title) v.statement = c.title;
         if (c.description) v.body = c.description;
         if (c.background_image) v.img = mediaUrl(c.background_image);
@@ -415,7 +416,7 @@ const ADAPTERS = {
       push(v, api) {
         const s = sect(api, 'service_charter_intro'); if (!s) return [];
         const cta_buttons = (v.buttons || []).filter((b) => b.label).map((b) => ({ label: b.label, link: b.link || '', type: (b.type || 'Primary').toLowerCase() }));
-        return [{ id: s.id, content: { ...s.content, title: v.statement, ...(v.body ? { description: v.body } : {}), ...(isUrl(v.img) ? { background_image: v.img } : {}), ...(cta_buttons.length ? { cta_buttons } : {}) } }];
+        return [{ id: s.id, content: { ...s.content, ...(v.eyebrow !== undefined ? { eyebrow: v.eyebrow } : {}), title: v.statement, ...(v.body ? { description: v.body } : {}), ...(isUrl(v.img) ? { background_image: v.img } : {}), ...(cta_buttons.length ? { cta_buttons } : {}) } }];
       },
     },
     'In numbers': metrics(),
@@ -498,11 +499,13 @@ const ADAPTERS = {
       _type: 'services_standards_table',
       pull(v, api) {
         const c = sect(api, 'services_standards_table') && api.services_standards_table.content; if (!c) return;
+        if (c.eyebrow) v.eyebrow = c.eyebrow;
         if (c.title) v.title = c.title;
+        if (c.description || c.desc) v.desc = c.description || c.desc;
       },
       push(v, api) {
         const s = sect(api, 'services_standards_table'); if (!s) return [];
-        return [{ id: s.id, content: { ...s.content, ...(v.title !== undefined ? { title: v.title } : {}) } }];
+        return [{ id: s.id, content: { ...s.content, ...(v.eyebrow !== undefined ? { eyebrow: v.eyebrow } : {}), ...(v.title !== undefined ? { title: v.title } : {}), ...(v.desc !== undefined ? { description: v.desc } : {}) } }];
       },
     },
     'Documents': docList('guides_policy_documents', 'documents'),
@@ -526,6 +529,23 @@ const ADAPTERS = {
 
   ci: {
     'Hero': heroDept(),
+    'C&I Function': {
+      _type: 'ci_function',
+      pull(v, api) {
+        const c = sect(api, 'ci_function') && api.ci_function.content; if (!c) return;
+        if (c.title) v.title = c.title;
+        if (c.center) v.center = c.center;
+        if (Array.isArray(c.wings) && c.wings.length) {
+          v.wings = c.wings.map((w) => ({ text: w.text || '', desc: w.description || w.desc || '' }));
+        }
+      },
+      push(v, api) {
+        const s = sect(api, 'ci_function'); if (!s) return [];
+        const prev = Array.isArray(s.content && s.content.wings) ? s.content.wings : [];
+        const wings = (v.wings || []).map((w, i) => ({ ...(prev[i] || {}), text: w.text, description: w.desc }));
+        return [{ id: s.id, content: { ...s.content, ...(v.title !== undefined ? { title: v.title } : {}), ...(v.center !== undefined ? { center: v.center } : {}), ...(wings.length ? { wings } : {}) } }];
+      },
+    },
     'At a glance': overview(),
     'In numbers': metrics(),
     'Cards': cardList('innovation_in_numbers', 'items', 'description'),
@@ -549,6 +569,7 @@ const ADAPTERS = {
 
   reforms: {
     'Hero': heroDept(),
+    'In numbers': metrics(),
     'At a glance': overview(),
     'Focus areas': focusAreas(),
     'Cards': cardList('build_stronger_institutions', 'items', 'content'),
@@ -574,6 +595,7 @@ const ADAPTERS = {
 
   msd: {
     'Hero': heroDept(),
+    'In numbers': metrics(),
     'At a glance': overview(),
     'Services': cardList('info_cards', 'cards', 'content'),
     'Focus areas': focusAreas(),
